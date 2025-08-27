@@ -1,0 +1,31 @@
+# Rust build artifacts
+target/
+debug/
+release/
+
+# Rust/cargo intermediate files
+**/*.rs.bk
+*.rlib
+*.rmeta
+
+# Logs
+*.log
+
+# Environment files (keep examples)
+.env
+.env.*
+!.env.example
+
+# Editor/OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage and profiling
+coverage/
+*.profraw
+*.profdata
+lcov.info
