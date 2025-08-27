@@ -4,11 +4,20 @@ use std::process::Command;
 
 pub fn run_command(cmd: &str) {
     if cfg!(windows) {
-        // Prefer PowerShell if PSModulePath looks present
-        let ps_paths = std::env::var("PSModulePath").unwrap_or_default();
-        let is_powershell = ps_paths.split(std::path::MAIN_SEPARATOR).count() >= 3;
-        if is_powershell {
-            let _ = Command::new("powershell.exe").args(["-Command", cmd]).status();
+        // Allow explicit override via SHELL_NAME
+        let override_shell = std::env::var("SHELL_NAME").unwrap_or_default().to_ascii_lowercase();
+        let prefer_ps = if override_shell.contains("powershell") {
+            true
+        } else if override_shell.contains("cmd") {
+            false
+        } else {
+            // Fallback heuristic: if PSModulePath exists, prefer PowerShell; otherwise cmd
+            !std::env::var("PSModulePath").unwrap_or_default().is_empty()
+        };
+        if prefer_ps {
+            let _ = Command::new("powershell.exe")
+                .args(["-NoLogo", "-NoProfile", "-Command", cmd])
+                .status();
         } else {
             let _ = Command::new("cmd.exe").args(["/c", cmd]).status();
         }

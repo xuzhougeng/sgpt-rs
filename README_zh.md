@@ -46,3 +46,13 @@ Hello! This is ShellGPT. How can I assist you with your shell command needs toda
 $ sgpt "say hi in one word"
 Hi
 ```
+
+## Windows 与 PowerShell 支持
+
+- 指定目标 Shell：使用 `--target-shell` 强制生成特定 Shell 的命令。
+  - 可选值：`auto`、`powershell`、`cmd`、`bash`、`zsh`、`fish`、`sh`
+  - 示例：
+    - 生成 PowerShell 命令：`sgpt -s --target-shell powershell "查看当前目录下包含 foo 的文件"`
+    - 生成 CMD 命令：`sgpt -s --target-shell cmd "打印 PATH 并退出"`
+- 交互执行：在 Windows 上会根据 `--target-shell` 或自动检测优先使用 PowerShell 执行（否则回退到 CMD）。
+- 生成提示优化：当目标为 PowerShell 时，提示会引导模型优先使用 PowerShell 原生命令（如 `Get-ChildItem`、`Select-String`），并使用 `;` 连接多步命令（而不是 `&&`）。

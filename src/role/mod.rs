@@ -40,13 +40,37 @@ pub fn default_role_text(cfg: &Config, role: DefaultRole) -> String {
         DefaultRole::Default => format!(
             "You are programming and system administration assistant.\nYou are managing {os} operating system with {shell} shell.\nProvide short responses in about 100 words, unless you are specifically asked for more details.\nIf you need to store any data, assume it will be stored in the conversation."
         ),
-        DefaultRole::Shell => format!(
-            "Provide only {shell} commands for {os} without any description.\nIf there is a lack of details, provide most logical solution.\nEnsure the output is a valid shell command.\nIf multiple steps required try to combine them together using &&.\nProvide only plain text without Markdown formatting.\nDo not provide markdown formatting such as ```."
-        ),
+        DefaultRole::Shell => {
+            let ch = chain_hint(&shell);
+            let ph = platform_hint(&shell);
+            format!(
+                "Provide only {shell} commands for {os} without any description.\nIf there is a lack of details, provide most logical solution.\nEnsure the output is a valid shell command.\n{ch}\n{ph}\nProvide only plain text without Markdown formatting.\nDo not provide markdown formatting such as ```."
+            )
+        }
         DefaultRole::DescribeShell =>
             "Provide a terse, single sentence description of the given shell command.\nDescribe each argument and option of the command.\nProvide short responses in about 80 words.".to_string(),
         DefaultRole::Code =>
             "Provide only code as output without any description.\nProvide only code in plain text format without Markdown formatting.\nDo not include symbols such as ``` or ```python.\nIf there is a lack of details, provide most logical solution.\nYou are not allowed to ask for more details.\nFor example if the prompt is \"Hello world Python\", you should return \"print('Hello world')\".".to_string(),
+    }
+}
+
+fn chain_hint(shell: &str) -> String {
+    let sh = shell.to_ascii_lowercase();
+    if sh.contains("powershell") { "If multiple steps are required, separate commands with ; (not &&).".into() }
+    else if sh.contains("cmd") { "If multiple steps are required, combine commands with &&.".into() }
+    else { "If multiple steps are required, combine commands with &&.".into() }
+}
+
+fn platform_hint(shell: &str) -> String {
+    let sh = shell.to_ascii_lowercase();
+    if sh.contains("powershell") {
+        "Prefer native PowerShell cmdlets and parameters (e.g., Get-ChildItem, Select-String) rather than Unix commands."
+            .into()
+    } else if sh.contains("cmd") {
+        "Prefer built-in Windows commands (e.g., dir, findstr) where appropriate."
+            .into()
+    } else {
+        String::new()
     }
 }
 
@@ -148,5 +172,7 @@ pub fn resolve_role_text(cfg: &Config, user_role: Option<&str>, fallback: Defaul
         if let Ok(sr) = SystemRole::get(cfg, name) { return sr.role; }
     }
     let (os, shell) = (detect_os(cfg), detect_shell(cfg));
-    default_role_text(cfg, fallback).replace("{os}", &os).replace("{shell}", &shell)
+    default_role_text(cfg, fallback)
+        .replace("{os}", &os)
+        .replace("{shell}", &shell)
 }

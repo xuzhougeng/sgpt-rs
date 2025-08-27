@@ -36,6 +36,10 @@ pub struct Cli {
     #[arg(short = 's', long)]
     pub shell: bool,
 
+    /// Override target shell for command generation (auto|powershell|cmd|bash|zsh|fish|sh).
+    #[arg(long = "target-shell")]
+    pub target_shell: Option<String>,
+
     /// Interactive mode for --shell option.
     #[arg(long)]
     pub interaction: bool,

@@ -19,6 +19,18 @@ use std::io::{self, Read};
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
 
+    // Optional: override target shell via CLI before loading config
+    if let Some(ts) = args.target_shell.as_deref() {
+        // Normalize common values
+        let lower = ts.to_ascii_lowercase();
+        let norm_owned = match lower.as_str() {
+            "pwsh" | "powershell" | "powershell.exe" => "powershell.exe".to_string(),
+            "cmd" | "cmd.exe" => "cmd.exe".to_string(),
+            other => other.to_string(),
+        };
+        std::env::set_var("SHELL_NAME", norm_owned);
+    }
+
     // Load config
     let cfg = Config::load();
     // Ensure default roles exist

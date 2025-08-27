@@ -8,7 +8,7 @@ use futures_util::StreamExt;
 use crate::{
     config::Config,
     llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
-    role::{default_role_text, DefaultRole},
+    role::{resolve_role_text, DefaultRole},
     utils::run_command,
 };
 
@@ -19,7 +19,7 @@ impl ShellHandler {
     pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_interaction: bool) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
-        let role_text = default_role_text(&cfg, DefaultRole::Shell);
+        let role_text = resolve_role_text(&cfg, None, DefaultRole::Shell);
         let default_exec = cfg.get_bool("DEFAULT_EXECUTE_SHELL_CMD");
 
         // Helper to ask LLM for a command based on a user prompt
