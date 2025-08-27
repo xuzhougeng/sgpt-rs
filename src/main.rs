@@ -1,0 +1,181 @@
+mod cli;
+mod handlers;
+mod role;
+mod printer;
+mod config;
+mod cache;
+mod functions;
+mod utils;
+mod integration;
+mod llm;
+
+use anyhow::{anyhow, bail, Result};
+use config::Config;
+use is_terminal::IsTerminal;
+use role::DefaultRole;
+use std::io::{self, Read};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = cli::Cli::parse();
+
+    // Load config
+    let cfg = Config::load();
+
+    // Resolve model: CLI overrides config; fall back to DEFAULT_MODEL
+    let effective_model = args
+        .model
+        .clone()
+        .or_else(|| cfg.get("DEFAULT_MODEL"))
+        .unwrap_or_else(|| "gpt-4o".to_string());
+
+    // stdin handling (pipe support with __sgpt__eof__ delimiter)
+    let mut prompt_from_stdin = String::new();
+    let stdin_is_tty = io::stdin().is_terminal();
+    if !stdin_is_tty {
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf)?;
+        if let Some((before, _after)) = buf.split_once("__sgpt__eof__") {
+            prompt_from_stdin = before.to_string();
+        } else {
+            prompt_from_stdin = buf;
+        }
+    }
+
+    // Editor cannot be combined with stdin input
+    if args.editor && !stdin_is_tty {
+        bail!("--editor cannot be used with stdin input");
+    }
+
+    // Resolve prompt: stdin + optional positional
+    let arg_prompt = args.prompt.unwrap_or_default();
+    let prompt = if !prompt_from_stdin.is_empty() && !arg_prompt.is_empty() {
+        format!("{}\n\n{}", prompt_from_stdin, arg_prompt)
+    } else if !prompt_from_stdin.is_empty() {
+        prompt_from_stdin
+    } else {
+        arg_prompt
+    };
+
+    // Compute markdown preference early for show_chat
+    let md_for_show = if args.no_md { false } else if args.md { true } else { cfg.get_bool("PRETTIFY_MARKDOWN") };
+
+    // Show/list chat shortcuts
+    if let Some(id) = &args.show_chat {
+        use owo_colors::OwoColorize;
+        use crate::printer::MarkdownPrinter;
+        let session = cache::ChatSession::from_config(&cfg);
+        if !session.exists(id) {
+            bail!("chat not found: {}", cfg.chat_cache_path().join(id).display());
+        }
+        let messages = session.read(id)?;
+        if md_for_show {
+            let mut md_text = String::new();
+            for m in messages {
+                let role = match m.role { llm::Role::System => "system", llm::Role::User => "user", llm::Role::Assistant => "assistant", llm::Role::Tool => "tool" };
+                md_text.push_str(&format!("### {}\n\n{}\n\n", role, m.content));
+            }
+            MarkdownPrinter::default().print(&md_text);
+        } else {
+            for m in messages {
+                let (role, color) = match m.role {
+                    llm::Role::System => ("system", "cyan"),
+                    llm::Role::User => ("user", "magenta"),
+                    llm::Role::Assistant => ("assistant", "green"),
+                    llm::Role::Tool => ("tool", "yellow"),
+                };
+                let header = match color {
+                    "cyan" => format!("{}", role.cyan()),
+                    "magenta" => format!("{}", role.magenta()),
+                    "green" => format!("{}", role.green()),
+                    "yellow" => format!("{}", role.yellow()),
+                    _ => role.to_string(),
+                };
+                println!("{}: {}\n", header, m.content);
+            }
+        }
+        return Ok(());
+    }
+    if args.list_chats {
+        let dir = cfg.chat_cache_path();
+        if dir.exists() {
+            for entry in std::fs::read_dir(dir)? {
+                let e = entry?;
+                println!("{}", e.path().display());
+            }
+        }
+        return Ok(());
+    }
+
+    // Effective boolean switches with config defaults
+    let mut md = if args.no_md {
+        false
+    } else if args.md {
+        true
+    } else {
+        cfg.get_bool("PRETTIFY_MARKDOWN")
+    };
+    let interaction = if args.no_interaction {
+        false
+    } else if args.interaction {
+        true
+    } else {
+        cfg.get_bool("SHELL_INTERACTION")
+    };
+    let cache = if args.no_cache {
+        false
+    } else if args.cache {
+        true
+    } else {
+        true // default enabled
+    };
+    let mut functions = if args.no_functions {
+        false
+    } else if args.functions {
+        true
+    } else {
+        cfg.get_bool("OPENAI_USE_FUNCTIONS")
+    };
+
+    let role = DefaultRole::from_flags(args.shell, args.describe_shell, args.code);
+    // Force md off for shell/code/describe; and disable functions in those modes
+    if matches!(role, DefaultRole::Shell | DefaultRole::Code | DefaultRole::DescribeShell) {
+        md = false;
+        functions = false;
+    }
+
+    // Handle install-functions shortcut
+    if args.install_functions {
+        let path = functions::install_default_functions(&cfg)?;
+        println!("Installed default function at {}", path.display());
+        return Ok(());
+    }
+
+    // Route to handler
+    match (args.repl.as_deref(), args.chat.as_deref()) {
+        (Some(repl_id), None) => handlers::repl::ReplHandler::run(
+            repl_id,
+            if prompt.is_empty() { None } else { Some(prompt.as_str()) },
+            &effective_model,
+            args.temperature,
+            args.top_p,
+            md_for_show,
+            args.shell,
+            interaction,
+        ).await,
+        (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, cache, md_for_show, functions).await,
+        (None, None) => {
+            if args.shell {
+                let no_interact = !interaction || !stdin_is_tty;
+                handlers::shell::ShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, no_interact).await
+            } else if args.describe_shell {
+                handlers::describe::DescribeShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, md).await
+            } else if args.code {
+                handlers::code::CodeHandler::run(&prompt, &effective_model, args.temperature, args.top_p).await
+            } else {
+                handlers::default::DefaultHandler::run(&prompt, &effective_model, args.temperature, args.top_p, cache, md, functions).await
+            }
+        }
+        _ => Err(anyhow!("--chat and --repl cannot be used together")),
+    }
+}
