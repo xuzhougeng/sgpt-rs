@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
     printer::MarkdownPrinter,
-    role::{default_role_text, DefaultRole},
+    role::{default_role_text, resolve_role_text, DefaultRole},
     handlers::describe::DescribeShellHandler,
     utils::run_command,
 };
@@ -19,7 +19,7 @@ use crate::{
 pub struct ReplHandler;
 
 impl ReplHandler {
-    pub async fn run(chat_id: &str, init_prompt: Option<&str>, model: &str, temperature: f32, top_p: f32, markdown: bool, is_shell: bool, allow_interaction: bool) -> Result<()> {
+    pub async fn run(chat_id: &str, init_prompt: Option<&str>, model: &str, temperature: f32, top_p: f32, markdown: bool, is_shell: bool, allow_interaction: bool, role_name: Option<&str>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let session = ChatSession::from_config(&cfg);
@@ -29,7 +29,7 @@ impl ReplHandler {
         println!("Entering REPL mode, press Ctrl+C to exit.");
 
         // start session with system role if not exists
-        let system_role_text = if is_shell { default_role_text(&cfg, DefaultRole::Shell) } else { "You are ShellGPT".to_string() };
+        let system_role_text = if is_shell { default_role_text(&cfg, DefaultRole::Shell) } else { resolve_role_text(&cfg, role_name, DefaultRole::Default) };
         let mut history = if session.exists(chat_id) {
             session.read(chat_id)?
         } else {

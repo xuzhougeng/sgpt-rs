@@ -9,18 +9,20 @@ use crate::llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent};
 use crate::printer::MarkdownPrinter;
 use crate::functions::Registry;
 use crate::llm::{FunctionCall, ToolCall, ToolSchema};
+use crate::role::{resolve_role_text, DefaultRole};
 
 #[allow(dead_code)]
 pub struct ChatHandler;
 
 impl ChatHandler {
-    pub async fn run(chat_id: &str, prompt: &str, model: &str, temperature: f32, top_p: f32, caching: bool, markdown: bool, allow_functions: bool) -> Result<()> {
+    pub async fn run(chat_id: &str, prompt: &str, model: &str, temperature: f32, top_p: f32, caching: bool, markdown: bool, allow_functions: bool, role_name: Option<&str>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let session = ChatSession::from_config(&cfg);
         let base_url = cfg.get("API_BASE_URL").unwrap_or_else(|| "default".into());
         let req_cache = RequestCache::from_config(&cfg);
         let registry = Registry::load(&cfg)?;
+        let system_text = resolve_role_text(&cfg, role_name, DefaultRole::Default);
 
         // temp chat id shouldn't persist
         if chat_id == "temp" { session.invalidate(chat_id); }
@@ -29,7 +31,7 @@ impl ChatHandler {
         let mut messages = if session.exists(chat_id) {
             session.read(chat_id)?
         } else {
-            vec![ChatMessage { role: Role::System, content: "You are ShellGPT".into(), name: None, tool_calls: None }]
+            vec![ChatMessage { role: Role::System, content: system_text, name: None, tool_calls: None }]
         };
         if !prompt.is_empty() {
             messages.push(ChatMessage { role: Role::User, content: prompt.to_string(), name: None, tool_calls: None });

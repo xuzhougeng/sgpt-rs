@@ -1,6 +1,13 @@
-//! Roles subsystem and default role strings.
+//! Roles subsystem: default role strings and persistent SystemRole store.
 
-use std::path::Path;
+use std::{
+    fs,
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+};
+
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
@@ -65,4 +72,81 @@ fn detect_shell(cfg: &Config) -> String {
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or(shell)
+}
+
+// Persistent roles
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemRole {
+    pub name: String,
+    pub role: String,
+}
+
+impl SystemRole {
+    fn storage_dir(cfg: &Config) -> PathBuf { cfg.roles_path() }
+
+    pub fn create_defaults(cfg: &Config) -> Result<()> {
+        let dir = Self::storage_dir(cfg);
+        fs::create_dir_all(&dir)?;
+        let (os, shell) = (detect_os(cfg), detect_shell(cfg));
+        let defaults = vec![
+            ("ShellGPT", default_role_text(cfg, DefaultRole::Default).replace("{os}", &os).replace("{shell}", &shell)),
+            ("Shell Command Generator", default_role_text(cfg, DefaultRole::Shell).replace("{os}", &os).replace("{shell}", &shell)),
+            ("Shell Command Descriptor", default_role_text(cfg, DefaultRole::DescribeShell)),
+            ("Code Generator", default_role_text(cfg, DefaultRole::Code)),
+        ];
+        for (name, body) in defaults {
+            let rp = dir.join(format!("{}.json", name));
+            if rp.exists() { continue; }
+            let sr = SystemRole { name: name.to_string(), role: format!("You are {}\n{}", name, body) };
+            fs::write(rp, serde_json::to_string(&sr)?)?;
+        }
+        Ok(())
+    }
+
+    pub fn list(cfg: &Config) -> Vec<PathBuf> {
+        let dir = Self::storage_dir(cfg);
+        if let Ok(rd) = fs::read_dir(&dir) {
+            let mut files: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+            files.sort_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok());
+            files
+        } else { Vec::new() }
+    }
+
+    pub fn get(cfg: &Config, name: &str) -> Result<SystemRole> {
+        let rp = Self::storage_dir(cfg).join(format!("{}.json", name));
+        if !rp.exists() { return Err(anyhow!("role not found: {}", name)); }
+        let text = fs::read_to_string(rp)?;
+        let sr: SystemRole = serde_json::from_str(&text)?;
+        Ok(sr)
+    }
+
+    pub fn show(cfg: &Config, name: &str) -> Result<String> { Ok(Self::get(cfg, name)?.role) }
+
+    pub fn create_interactive(cfg: &Config, name: &str) -> Result<()> {
+        let dir = Self::storage_dir(cfg);
+        fs::create_dir_all(&dir)?;
+        let rp = dir.join(format!("{}.json", name));
+        if rp.exists() {
+            // Overwrite without confirmation to keep it simple
+        }
+        eprintln!("Enter role description for \"{}\". Press Ctrl+D when done:\n", name);
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf)?;
+        if buf.trim().is_empty() { return Err(anyhow!("empty role description")); }
+        let content = format!("You are {}\n{}", name, buf.trim());
+        let sr = SystemRole { name: name.to_string(), role: content };
+        let data = serde_json::to_string(&sr)?;
+        let mut f = fs::File::create(rp)?;
+        f.write_all(data.as_bytes())?;
+        Ok(())
+    }
+}
+
+pub fn resolve_role_text(cfg: &Config, user_role: Option<&str>, fallback: DefaultRole) -> String {
+    if let Some(name) = user_role {
+        if let Ok(sr) = SystemRole::get(cfg, name) { return sr.role; }
+    }
+    let (os, shell) = (detect_os(cfg), detect_shell(cfg));
+    default_role_text(cfg, fallback).replace("{os}", &os).replace("{shell}", &shell)
 }

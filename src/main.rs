@@ -12,7 +12,7 @@ mod llm;
 use anyhow::{anyhow, bail, Result};
 use config::Config;
 use is_terminal::IsTerminal;
-use role::DefaultRole;
+use role::{DefaultRole, SystemRole};
 use std::io::{self, Read};
 
 #[tokio::main]
@@ -21,6 +21,8 @@ async fn main() -> Result<()> {
 
     // Load config
     let cfg = Config::load();
+    // Ensure default roles exist
+    let _ = SystemRole::create_defaults(&cfg);
 
     // Resolve model: CLI overrides config; fall back to DEFAULT_MODEL
     let effective_model = args
@@ -59,6 +61,18 @@ async fn main() -> Result<()> {
 
     // Compute markdown preference early for show_chat
     let md_for_show = if args.no_md { false } else if args.md { true } else { cfg.get_bool("PRETTIFY_MARKDOWN") };
+
+    // Role management shortcuts
+    if args.list_roles {
+        for p in SystemRole::list(&cfg) { println!("{}", p.display()); }
+        return Ok(());
+    }
+    if let Some(name) = &args.show_role { println!("{}", SystemRole::show(&cfg, name)?); return Ok(()); }
+    if let Some(name) = &args.create_role {
+        SystemRole::create_interactive(&cfg, name)?;
+        println!("Created/updated role: {}", name);
+        return Ok(());
+    }
 
     // Show/list chat shortcuts
     if let Some(id) = &args.show_chat {
@@ -149,6 +163,12 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Handle install-integration (bash/zsh) shortcut
+    if args.install_integration {
+        integration::install()?;
+        return Ok(());
+    }
+
     // Route to handler
     match (args.repl.as_deref(), args.chat.as_deref()) {
         (Some(repl_id), None) => handlers::repl::ReplHandler::run(
@@ -160,8 +180,9 @@ async fn main() -> Result<()> {
             md_for_show,
             args.shell,
             interaction,
+            args.role.as_deref(),
         ).await,
-        (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, cache, md_for_show, functions).await,
+        (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, cache, md_for_show, functions, args.role.as_deref()).await,
         (None, None) => {
             if args.shell {
                 let no_interact = !interaction || !stdin_is_tty;
@@ -171,7 +192,7 @@ async fn main() -> Result<()> {
             } else if args.code {
                 handlers::code::CodeHandler::run(&prompt, &effective_model, args.temperature, args.top_p).await
             } else {
-                handlers::default::DefaultHandler::run(&prompt, &effective_model, args.temperature, args.top_p, cache, md, functions).await
+                handlers::default::DefaultHandler::run(&prompt, &effective_model, args.temperature, args.top_p, cache, md, functions, args.role.as_deref()).await
             }
         }
         _ => Err(anyhow!("--chat and --repl cannot be used together")),
