@@ -7,7 +7,7 @@ use clap::{ArgGroup, Parser};
 #[command(group(ArgGroup::new("md_switch").args(["md", "no_md"]).multiple(false)))]
 #[command(group(ArgGroup::new("interaction_switch").args(["interaction", "no_interaction"]).multiple(false)))]
 #[command(group(ArgGroup::new("cache_switch").args(["cache", "no_cache"]).multiple(false)))]
-#[command(group(ArgGroup::new("functions_switch").args(["functions", "no_functions"]).multiple(false)))]
+#[command(group(ArgGroup::new("functions_switch").args(["functions"]).multiple(false)))]
 pub struct Cli {
     /// The prompt to generate completions for.
     #[arg(value_name = "PROMPT")]
@@ -51,12 +51,9 @@ pub struct Cli {
     #[arg(short = 'c', long = "code")]
     pub code: bool,
 
-    /// Allow function calls.
+    /// Enable function calls (disabled by default).
     #[arg(long)]
     pub functions: bool,
-    /// Disallow function calls.
-    #[arg(long = "no-functions")]
-    pub no_functions: bool,
 
     /// Open $EDITOR to provide a prompt.
     #[arg(long)]

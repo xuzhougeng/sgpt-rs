@@ -3,7 +3,7 @@ use std::{
     env,
     fs,
     io::{BufRead, BufReader},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use directories::BaseDirs;
@@ -11,6 +11,7 @@ use directories::BaseDirs;
 #[derive(Debug, Clone)]
 pub struct Config {
     inner: HashMap<String, String>,
+    #[allow(dead_code)]
     pub config_path: PathBuf,
 }
 
@@ -59,10 +60,12 @@ impl Config {
             .unwrap_or(false)
     }
 
+    #[allow(dead_code)]
     pub fn get_usize(&self, key: &str) -> Option<usize> {
         self.get(key).and_then(|v| v.parse::<usize>().ok())
     }
 
+    #[allow(dead_code)]
     pub fn get_path(&self, key: &str) -> Option<PathBuf> {
         self.get(key).map(PathBuf::from)
     }
@@ -75,6 +78,7 @@ impl Config {
         PathBuf::from(self.get("CACHE_PATH").unwrap())
     }
 
+    #[allow(dead_code)]
     pub fn roles_path(&self) -> PathBuf {
         PathBuf::from(self.get("ROLE_STORAGE_PATH").unwrap())
     }
@@ -117,7 +121,8 @@ fn default_config_path() -> PathBuf {
     let base = BaseDirs::new()
         .map(|b| b.config_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("~/.config"));
-    base.join("shell_gpt").join(".sgptrc")
+    // Read config from ~/.config/sgpt_rs/.sgptrc
+    base.join("sgpt_rs").join(".sgptrc")
 }
 
 fn default_map() -> HashMap<String, String> {
@@ -126,8 +131,8 @@ fn default_map() -> HashMap<String, String> {
     let base = BaseDirs::new()
         .map(|b| b.config_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("~/.config"));
-    let sgpt_dir = base.join("shell_gpt");
-    let temp = env::temp_dir().join("shell_gpt");
+    let sgpt_dir = base.join("sgpt_rs");
+    let temp = env::temp_dir().join("sgpt_rs");
 
     m.insert(
         "CHAT_CACHE_PATH".into(),
@@ -159,7 +164,7 @@ fn default_map() -> HashMap<String, String> {
     // Bools as strings
     m.insert("DEFAULT_EXECUTE_SHELL_CMD".into(), "false".into());
     m.insert("DISABLE_STREAMING".into(), "false".into());
-    m.insert("OPENAI_USE_FUNCTIONS".into(), "true".into());
+    m.insert("OPENAI_USE_FUNCTIONS".into(), "false".into());
     m.insert("SHOW_FUNCTIONS_OUTPUT".into(), "false".into());
     m.insert("PRETTIFY_MARKDOWN".into(), "true".into());
     m.insert("USE_LITELLM".into(), "false".into());
@@ -167,4 +172,3 @@ fn default_map() -> HashMap<String, String> {
 
     m
 }
-

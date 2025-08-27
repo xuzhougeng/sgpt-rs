@@ -37,7 +37,7 @@ impl ReplHandler {
         };
 
         // helper to send one prompt and persist (Default role)
-        let mut do_one = |prompt: String, history_ref: &mut Vec<ChatMessage>| -> Result<()> {
+        let do_one = |prompt: String, history_ref: &mut Vec<ChatMessage>| -> Result<()> {
             if prompt.trim().is_empty() { return Ok(()); }
             // build messages
             let mut msgs = history_ref.clone();
@@ -74,7 +74,7 @@ impl ReplHandler {
 
         // helper for shell role: generate command from user prompt, print and persist
         let mut last_cmd = String::new();
-        let mut do_one_shell = |prompt: String, history_ref: &mut Vec<ChatMessage>, last_cmd_ref: &mut String| -> Result<()> {
+        let do_one_shell = |prompt: String, history_ref: &mut Vec<ChatMessage>, last_cmd_ref: &mut String| -> Result<()> {
             if prompt.trim().is_empty() { return Ok(()); }
             let mut msgs = history_ref.clone();
             msgs.push(ChatMessage { role: Role::User, content: prompt, name: None, tool_calls: None });

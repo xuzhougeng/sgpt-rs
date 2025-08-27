@@ -148,13 +148,44 @@ impl LlmClient {
                 .await
                 .context("failed to send chat request")?;
 
-            if !resp.status().is_success() {
-                let status = resp.status();
-                Err(anyhow::anyhow!("LLM error: {}", status))?;
+            // Avoid moving `resp` in the error branch by wrapping in Option
+            let mut resp_opt = Some(resp);
+            let status = resp_opt.as_ref().map(|r| r.status()).unwrap();
+            if !status.is_success() {
+                // Include provider error payload + actionable hints (e.g., tools 422) for easier debugging
+                let text = resp_opt.take().unwrap().text().await.unwrap_or_default();
+                let mut msg = String::new();
+                let snippet = if text.len() > 800 { &text[..800] } else { &text };
+                msg.push_str(snippet);
+
+                let code = status.as_u16();
+                let lower = text.to_lowercase();
+                let mut hints: Vec<&str> = Vec::new();
+                if code == 401 {
+                    hints.push("Set OPENAI_API_KEY or export it in your shell");
+                }
+                if code == 422 || code == 400 {
+                    if lower.contains("tool_choice") || lower.contains("parallel_tool_calls") || lower.contains("\"tools\"") || lower.contains("function_call") || lower.contains("tool calls") {
+                        hints.push("Your backend may not support OpenAI tools; retry without --functions or set OPENAI_USE_FUNCTIONS=false");
+                    }
+                    if lower.contains("model") && (lower.contains("not found") || lower.contains("unknown") || lower.contains("invalid")) {
+                        hints.push("Check model name via --model or set DEFAULT_MODEL appropriately for your provider");
+                    }
+                }
+                if lower.contains("rate limit") || lower.contains("quota") {
+                    hints.push("You may be rate limited; retry later or reduce concurrency");
+                }
+
+                if !hints.is_empty() {
+                    msg.push_str("\nHint: ");
+                    msg.push_str(&hints.join("; "));
+                }
+
+                Err(anyhow::anyhow!("LLM error: {} {}", status, msg))?;
             }
 
             let mut buf = String::new();
-            let mut stream = resp.bytes_stream();
+            let mut stream = resp_opt.take().unwrap().bytes_stream();
             use futures_util::StreamExt as _;
 
             while let Some(chunk) = stream.next().await {

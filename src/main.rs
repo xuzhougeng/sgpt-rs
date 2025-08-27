@@ -129,9 +129,7 @@ async fn main() -> Result<()> {
     } else {
         true // default enabled
     };
-    let mut functions = if args.no_functions {
-        false
-    } else if args.functions {
+    let mut functions = if args.functions {
         true
     } else {
         cfg.get_bool("OPENAI_USE_FUNCTIONS")
