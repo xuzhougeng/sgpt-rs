@@ -39,9 +39,12 @@ jobs:
             artifact_name: sgpt-windows
             bin_path: target\\release\\sgpt.exe
             pack_cmd: |
-              mkdir dist
-              copy target\\release\\sgpt.exe dist\\sgpt.exe
-              powershell -Command "$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64') { 'x86_64' } elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { $env:PROCESSOR_ARCHITECTURE }; $pkg = \"sgpt-${{ github.ref_name }}-windows-$arch.zip\"; Compress-Archive -Path dist\\sgpt.exe -DestinationPath $pkg; (Get-FileHash $pkg -Algorithm SHA256).Hash | Out-File -Encoding ascii \"$pkg.sha256\""
+              New-Item -ItemType Directory -Force -Path dist | Out-Null
+              Copy-Item -Path target/release/sgpt.exe -Destination dist/sgpt.exe -Force
+              $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64') { 'x86_64' } elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { $env:PROCESSOR_ARCHITECTURE }
+              $pkg = "sgpt-${{ github.ref_name }}-windows-$arch.zip"
+              Compress-Archive -Path dist/sgpt.exe -DestinationPath $pkg -Force
+              (Get-FileHash $pkg -Algorithm SHA256).Hash | Set-Content -Encoding ascii "$pkg.sha256"
 
     steps:
       - uses: actions/checkout@v4
