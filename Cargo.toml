@@ -12,7 +12,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 owo-colors = "4"
 termimad = "0.25"
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "process", "time"] }
 directories = "5.0"
 is-terminal = "0.4"
