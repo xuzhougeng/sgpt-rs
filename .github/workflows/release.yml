@@ -56,6 +56,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Update lockfile
+        run: cargo update -w
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
