@@ -19,13 +19,13 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: sgpt-linux
-            bin_path: target/release/sgpt
+            bin_path: target/x86_64-unknown-linux-musl/release/sgpt
             pack_cmd: |
               set -e
               mkdir -p dist
-              cp target/release/sgpt dist/sgpt
+              cp target/x86_64-unknown-linux-musl/release/sgpt dist/sgpt
               ARCH=$(uname -m)
-              PKG=sgpt-${{ github.ref_name }}-linux-$ARCH.tar.gz
+              PKG=sgpt-${{ github.ref_name }}-linux-musl-$ARCH.tar.gz
               tar -czf "$PKG" -C dist sgpt
               sha256sum "$PKG" | awk '{print $1}' > "$PKG.sha256"
           - os: macos-latest
@@ -59,8 +59,23 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install musl tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Add musl target (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: rustup target add x86_64-unknown-linux-musl
+
       - name: Build release
-        run: cargo build --release --locked
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            cargo build --release --locked --target x86_64-unknown-linux-musl
+          else
+            cargo build --release --locked
+          fi
 
       - name: Package artifact
         run: ${{ matrix.pack_cmd }}
