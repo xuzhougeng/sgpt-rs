@@ -47,6 +47,26 @@ $ sgpt "say hi in one word"
 Hi
 ```
 
+## Tavily 网络检索（外部工具）
+
+支持使用 Tavily 进行简单的网络检索：
+
+- 环境变量配置：
+  - `export TVLY_API_KEY=tvly_xxxxxxxxxxxxx`
+  - 可选：`export TAVILY_API_BASE=https://api.tavily.com`
+- 或在 `~/.config/sgpt_rs/.sgptrc` 中添加：
+  - `TVLY_API_KEY=tvly_xxxxxxxxxxxxx`
+  - `TAVILY_API_BASE=https://api.tavily.com`
+
+用法示例：
+
+```bash
+sgpt --tavily "Who is Leo Messi?"
+echo "recent Rust release" | sgpt --tavily
+```
+
+程序会优先输出结果标题、URL 与摘要；若结构不含常见字段，将以 JSON 格式原样输出。
+
 ## Windows 与 PowerShell 支持
 
 - 指定目标 Shell：使用 `--target-shell` 强制生成特定 Shell 的命令。

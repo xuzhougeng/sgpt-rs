@@ -8,6 +8,7 @@ mod functions;
 mod utils;
 mod integration;
 mod llm;
+mod external;
 
 use anyhow::{anyhow, bail, Result};
 use config::Config;
@@ -196,6 +197,24 @@ async fn main() -> Result<()> {
         ).await,
         (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, cache, md_for_show, functions, args.role.as_deref()).await,
         (None, None) => {
+            if args.tavily {
+                if prompt.trim().is_empty() {
+                    bail!("Provide a query after --tavily or via stdin");
+                }
+                let client = external::tavily::TavilyClient::from_config(&cfg)?;
+                let value = client.search(&prompt).await?;
+                if let Some(results) = value.get("results").and_then(|v| v.as_array()) {
+                    for (i, item) in results.iter().enumerate() {
+                        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                        let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let snippet = item.get("snippet").or_else(|| item.get("content")).and_then(|v| v.as_str()).unwrap_or("");
+                        println!("{}. {}\n{}\n{}\n", i + 1, title, url, snippet);
+                    }
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()));
+                }
+                Ok(())
+            } else
             if args.shell {
                 let no_interact = !interaction || !stdin_is_tty;
                 handlers::shell::ShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, no_interact).await
