@@ -35,6 +35,8 @@ export OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export DEFAULT_MODEL=deepseek-chat
 ```
 
+大抵是支持所所有OpenAI接口兼容的模型。
+
 直接使用sgpt
 
 ```
@@ -49,9 +51,11 @@ $ sgpt "say hi in one word"
 Hi
 ```
 
-## Tavily 网络检索（外部工具）
+## 网络搜索功能
 
-支持使用 Tavily 进行简单的网络检索：
+支持使用 Tavily 进行网络搜索，提供两种搜索模式：
+
+### 配置
 
 - 环境变量配置：
   - `export TVLY_API_KEY=tvly_xxxxxxxxxxxxx`
@@ -60,12 +64,31 @@ Hi
   - `TVLY_API_KEY=tvly_xxxxxxxxxxxxx`
   - `TAVILY_API_BASE=https://api.tavily.com`
 
-用法示例：
+### 基础搜索
+
+直接返回搜索结果，输出标题、URL 与摘要：
 
 ```bash
-sgpt --tavily "Who is Leo Messi?"
-echo "recent Rust release" | sgpt --tavily
+sgpt --search "Who is Leo Messi?"
+echo "recent Rust release" | sgpt --search
 ```
+
+### 增强搜索 🚀
+
+三步智能搜索流程，提供更全面的分析：
+
+```bash
+# 完整参数
+sgpt --enhanced-search "Who is Leo Messi?"
+
+# 或使用缩写
+sgpt -e "Who is Leo Messi?"
+```
+
+增强搜索流程：
+1. **意图分析**：AI 分析问题并构建 3 组不同角度的检索词
+2. **多维检索**：并行执行多组搜索，获取全面信息
+3. **综合回答**：基于搜索结果生成详细的综合分析（支持最多 4096 tokens 的详细回答）
 
 程序会优先输出结果标题、URL 与摘要；若结构不含常见字段，将以 JSON 格式原样输出。
 
