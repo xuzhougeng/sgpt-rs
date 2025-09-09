@@ -49,6 +49,7 @@ impl ReplHandler {
                 tools: None,
                 parallel_tool_calls: false,
                 tool_choice: None,
+                max_tokens: None,
             };
             let mut stream = client.chat_stream(msgs.clone(), opts);
             let mut assistant_text = String::new();
@@ -78,7 +79,7 @@ impl ReplHandler {
             if prompt.trim().is_empty() { return Ok(()); }
             let mut msgs = history_ref.clone();
             msgs.push(ChatMessage { role: Role::User, content: prompt, name: None, tool_calls: None });
-            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None };
+            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens: None };
             let mut stream = client.chat_stream(msgs.clone(), opts);
             let mut cmd = String::new();
             futures::executor::block_on(async {

@@ -197,9 +197,9 @@ async fn main() -> Result<()> {
         ).await,
         (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, cache, md_for_show, functions, args.role.as_deref()).await,
         (None, None) => {
-            if args.tavily {
+            if args.search {
                 if prompt.trim().is_empty() {
-                    bail!("Provide a query after --tavily or via stdin");
+                    bail!("Provide a query after --search or via stdin");
                 }
                 let client = external::tavily::TavilyClient::from_config(&cfg)?;
                 let value = client.search(&prompt).await?;
@@ -214,6 +214,18 @@ async fn main() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()));
                 }
                 Ok(())
+            } else if args.enhanced_search {
+                if prompt.trim().is_empty() {
+                    bail!("Provide a query after --enhanced-search or via stdin");
+                }
+                handlers::enhanced_search::EnhancedSearchHandler::run(
+                    &prompt,
+                    &effective_model,
+                    Some(args.temperature),
+                    Some(args.top_p),
+                    &cfg,
+                    md_for_show,
+                ).await
             } else
             if args.shell {
                 let no_interact = !interaction || !stdin_is_tty;

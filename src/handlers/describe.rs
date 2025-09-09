@@ -23,7 +23,7 @@ impl DescribeShellHandler {
             ChatMessage { role: Role::System, content: role_text, name: None, tool_calls: None },
             ChatMessage { role: Role::User, content: prompt.to_string(), name: None, tool_calls: None },
         ];
-        let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None };
+        let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens: None };
 
         let mut stream = client.chat_stream(messages, opts);
         let mut text = String::new();

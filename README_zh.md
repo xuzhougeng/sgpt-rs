@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-该项目受到 https://github.com/TheR1D/shell_gpt 启发, 使用 Rust 进行开发
+该项目受 https://github.com/TheR1D/shell_gpt 启发, 在Cluade-Code, Codex, Cusrsor协助下，使用 Rust 进行开发
 
 ## 快速开始
 
@@ -16,6 +16,8 @@ cargo build --release
 ```bash
 mv target/release/sgpt ~/.local/bin
 ```
+
+或者也可以从 <https://github.com/xuzhougeng/sgpt-rs/releases/>下载预编译的二进制文件。
 
 编辑 ~/.config/sgpt_rs/.sgptrc 设置使用DeepSeek作为默认模型
 

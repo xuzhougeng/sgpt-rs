@@ -2,7 +2,7 @@ use clap::{ArgGroup, Parser};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "sgpt", about = "ShellGPT Rust CLI", version)]
-#[command(group(ArgGroup::new("mode").args(["shell", "describe_shell", "code", "tavily"]).multiple(false)))]
+#[command(group(ArgGroup::new("mode").args(["shell", "describe_shell", "code", "search", "enhanced_search"]).multiple(false)))]
 #[command(group(ArgGroup::new("chat_mode").args(["chat", "repl"]).multiple(false)))]
 #[command(group(ArgGroup::new("md_switch").args(["md", "no_md"]).multiple(false)))]
 #[command(group(ArgGroup::new("interaction_switch").args(["interaction", "no_interaction"]).multiple(false)))]
@@ -56,8 +56,12 @@ pub struct Cli {
     pub code: bool,
 
     /// Use Tavily to search the web for the prompt.
-    #[arg(long = "tavily")]
-    pub tavily: bool,
+    #[arg(long = "search")]
+    pub search: bool,
+
+    /// Use enhanced search with multi-step analysis and comprehensive results.
+    #[arg(short = 'e', long = "enhanced-search")]
+    pub enhanced_search: bool,
 
     /// Enable function calls (disabled by default).
     #[arg(long)]

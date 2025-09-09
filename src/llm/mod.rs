@@ -67,6 +67,7 @@ pub struct ChatOptions {
     pub tools: Option<Vec<ToolSchema>>,
     pub parallel_tool_calls: bool,
     pub tool_choice: Option<String>, // e.g., "auto"
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -129,7 +130,7 @@ impl LlmClient {
                 "top_p": opts.top_p,
                 "messages": messages,
                 "stream": true,
-                "max_tokens": 512
+                "max_tokens": opts.max_tokens.unwrap_or(512)
             });
 
             if let Some(tools) = &opts.tools {

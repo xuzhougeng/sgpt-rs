@@ -34,6 +34,7 @@ impl DefaultHandler {
             tools: None,
             parallel_tool_calls: false,
             tool_choice: None,
+            max_tokens: None,
         };
         if allow_functions {
             let schemas: Vec<ToolSchema> = registry.schemas();

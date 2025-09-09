@@ -28,7 +28,7 @@ impl ShellHandler {
                 ChatMessage { role: Role::System, content: role_text.to_string(), name: None, tool_calls: None },
                 ChatMessage { role: Role::User, content: user_prompt, name: None, tool_calls: None },
             ];
-            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None };
+            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens: None };
             let mut stream = client.chat_stream(messages, opts);
             let mut cmd = String::new();
             while let Some(ev) = stream.next().await { if let StreamEvent::Content(t) = ev? { cmd.push_str(&t); } }
