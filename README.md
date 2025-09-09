@@ -111,3 +111,9 @@ Enhanced search workflow:
 3. **Comprehensive Answer**: Generates detailed synthesis based on search results (supports up to 4096 tokens for detailed responses)
 
 The program prioritizes outputting result titles, URLs, and summaries. If the structure doesn't contain common fields, it will output in JSON format as-is.
+
+## LLM Client
+
+This project includes an OpenAI-compatible, streaming Chat Completions client with tool-calls support. For API, config, streaming events, error hints, and a Rust usage example, see:
+
+- `doc/Model.md`

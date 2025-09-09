@@ -63,9 +63,10 @@ pub struct Cli {
     #[arg(short = 'e', long = "enhanced-search")]
     pub enhanced_search: bool,
 
-    /// Process document file (.md, .txt) and use its content as context.
-    #[arg(long = "doc")]
-    pub doc: Option<String>,
+    /// Process document files (.md, .txt) and use their content as context.
+    /// Can be used multiple times: --doc file1.md --doc file2.txt
+    #[arg(long = "doc", action = clap::ArgAction::Append)]
+    pub doc: Vec<String>,
 
     /// Enable function calls (disabled by default).
     #[arg(long)]

@@ -56,14 +56,11 @@ Hi
 支持直接处理文档文件，将文件内容作为上下文进行对话：
 
 ```bash
-# 处理文档并提问
-sgpt --doc README.md "这个项目是做什么的？"
+# 单个文件
+sgpt --doc document.md "your question"
 
-# 仅处理文档（等价于 cat README.md | sgpt）
-sgpt --doc notes.txt
-
-# 结合其他参数使用
-sgpt --doc changelog.log "最近有什么更新？" --md
+# 多个文件
+sgpt --doc file1.md --doc file2.txt --doc file3.md "your question"
 ```
 
 **支持的文件类型：**
@@ -73,7 +70,9 @@ sgpt --doc changelog.log "最近有什么更新？" --md
 - `.log` - 日志文件
 - 无扩展名文件
 
-这个功能等价于 `cat xxx.md | sgpt 'xxx'`，但更方便直接使用文件路径。
+这个功能等价于 `cat xxx.md yyy.md | sgpt 'xxx'`，但更方便直接使用文件路径。
+
+TODO: 当前就是将所有内容作为输入给LLM, 后续可能应该单个文件编辑
 
 ## 网络搜索功能
 
@@ -125,3 +124,9 @@ sgpt -e "Who is Leo Messi?"
     - 生成 CMD 命令：`sgpt -s --target-shell cmd "打印 PATH 并退出"`
 - 交互执行：在 Windows 上会根据 `--target-shell` 或自动检测优先使用 PowerShell 执行（否则回退到 CMD）。
 - 生成提示优化：当目标为 PowerShell 时，提示会引导模型优先使用 PowerShell 原生命令（如 `Get-ChildItem`、`Select-String`），并使用 `;` 连接多步命令（而不是 `&&`）。
+
+## 模型与 LLM 客户端
+
+项目内置兼容 OpenAI Chat Completions 的流式客户端，支持工具调用（function-calling）。关于配置、数据结构、流式事件、错误提示与使用示例，请参阅：
+
+- `doc/Model.md`

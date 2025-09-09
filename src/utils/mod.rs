@@ -30,9 +30,28 @@ pub fn run_command(cmd: &str) {
     }
 }
 
-/// Read document file and return its content as string.
+/// Read multiple document files and return their combined content as string.
 /// Currently supports .md, .txt, and other text-based files.
-pub fn read_document(file_path: &str) -> Result<String> {
+pub fn read_documents(file_paths: &[String]) -> Result<String> {
+    let mut combined_content = String::new();
+    
+    for (i, file_path) in file_paths.iter().enumerate() {
+        let content = read_single_document(file_path)?;
+        
+        if i > 0 {
+            combined_content.push_str("\n\n");
+        }
+        
+        combined_content.push_str(&format!("=== Document: {} ===\n", file_path));
+        combined_content.push_str(&content);
+    }
+    
+    Ok(combined_content)
+}
+
+/// Read single document file and return its content as string.
+/// Currently supports .md, .txt, and other text-based files.
+pub fn read_single_document(file_path: &str) -> Result<String> {
     let path = Path::new(file_path);
     
     // Check if file exists
@@ -61,6 +80,12 @@ pub fn read_document(file_path: &str) -> Result<String> {
             bail!("Unsupported file type: .{}\nCurrently supported: .md, .txt, .rst, .log, and files without extension", extension);
         }
     }
+}
+
+/// Read document file and return its content as string (for backward compatibility).
+/// Currently supports .md, .txt, and other text-based files.
+pub fn read_document(file_path: &str) -> Result<String> {
+    read_single_document(file_path)
 }
 
 /// Combine document content with user prompt.

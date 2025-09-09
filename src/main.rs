@@ -72,9 +72,9 @@ async fn main() -> Result<()> {
         arg_prompt
     };
 
-    // Process document file if --doc is provided
-    if let Some(doc_path) = &args.doc {
-        let doc_content = utils::read_document(doc_path)
+    // Process document files if --doc is provided
+    if !args.doc.is_empty() {
+        let doc_content = utils::read_documents(&args.doc)
             .map_err(|e| anyhow!("Document processing failed: {}", e))?;
         prompt = utils::combine_doc_and_prompt(&doc_content, &prompt);
     }
