@@ -63,6 +63,10 @@ pub struct Cli {
     #[arg(short = 'e', long = "enhanced-search")]
     pub enhanced_search: bool,
 
+    /// Process document file (.md, .txt) and use its content as context.
+    #[arg(long = "doc")]
+    pub doc: Option<String>,
+
     /// Enable function calls (disabled by default).
     #[arg(long)]
     pub functions: bool,

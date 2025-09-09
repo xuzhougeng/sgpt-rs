@@ -62,15 +62,22 @@ async fn main() -> Result<()> {
         bail!("--editor cannot be used with stdin input");
     }
 
-    // Resolve prompt: stdin + optional positional
+    // Resolve prompt: stdin + optional positional + document
     let arg_prompt = args.prompt.unwrap_or_default();
-    let prompt = if !prompt_from_stdin.is_empty() && !arg_prompt.is_empty() {
+    let mut prompt = if !prompt_from_stdin.is_empty() && !arg_prompt.is_empty() {
         format!("{}\n\n{}", prompt_from_stdin, arg_prompt)
     } else if !prompt_from_stdin.is_empty() {
         prompt_from_stdin
     } else {
         arg_prompt
     };
+
+    // Process document file if --doc is provided
+    if let Some(doc_path) = &args.doc {
+        let doc_content = utils::read_document(doc_path)
+            .map_err(|e| anyhow!("Document processing failed: {}", e))?;
+        prompt = utils::combine_doc_and_prompt(&doc_content, &prompt);
+    }
 
     // Compute markdown preference early for show_chat
     let md_for_show = if args.no_md { false } else if args.md { true } else { cfg.get_bool("PRETTIFY_MARKDOWN") };
