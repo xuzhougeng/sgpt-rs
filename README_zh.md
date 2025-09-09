@@ -51,6 +51,30 @@ $ sgpt "say hi in one word"
 Hi
 ```
 
+## 文档处理功能
+
+支持直接处理文档文件，将文件内容作为上下文进行对话：
+
+```bash
+# 处理文档并提问
+sgpt --doc README.md "这个项目是做什么的？"
+
+# 仅处理文档（等价于 cat README.md | sgpt）
+sgpt --doc notes.txt
+
+# 结合其他参数使用
+sgpt --doc changelog.log "最近有什么更新？" --md
+```
+
+**支持的文件类型：**
+- `.md` - Markdown 文件
+- `.txt` - 纯文本文件  
+- `.rst` - reStructuredText 文件
+- `.log` - 日志文件
+- 无扩展名文件
+
+这个功能等价于 `cat xxx.md | sgpt 'xxx'`，但更方便直接使用文件路径。
+
 ## 网络搜索功能
 
 支持使用 Tavily 进行网络搜索，提供两种搜索模式：

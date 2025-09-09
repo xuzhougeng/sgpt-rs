@@ -47,6 +47,30 @@ $ sgpt "say hi in one word"
 Hi
 ```
 
+## Document Processing
+
+Support for directly processing document files, using file content as context for conversations:
+
+```bash
+# Process document with question
+sgpt --doc README.md "What is this project about?"
+
+# Process document only (equivalent to cat README.md | sgpt)
+sgpt --doc notes.txt
+
+# Combine with other parameters
+sgpt --doc changelog.log "What changed recently?" --md
+```
+
+**Supported File Types:**
+- `.md` - Markdown files
+- `.txt` - Plain text files  
+- `.rst` - reStructuredText files
+- `.log` - Log files
+- Files without extension
+
+This feature is equivalent to `cat xxx.md | sgpt 'xxx'` but more convenient with direct file path usage.
+
 ## Web Search Features
 
 Support for web searching using Tavily, with two search modes available:
