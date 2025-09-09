@@ -130,7 +130,7 @@ Guidelines:
             tools: None,
             parallel_tool_calls: false,
             tool_choice: None,
-            max_tokens: Some(1024), // Increased for search queries parsing
+            max_tokens: Some(1024), // Set to 1024 tokens for search query generation
         };
 
         let mut stream = self.llm_client.chat_stream(messages, opts);

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-该项目受 https://github.com/TheR1D/shell_gpt 启发, 在Cluade-Code, Codex, Cusrsor协助下，使用 Rust 进行开发
+该项目受 https://github.com/TheR1D/shell_gpt 启发, 在Claude-Code, Codex, Cursor协助下，使用 Rust 进行开发
 
 ## 快速开始
 
