@@ -16,7 +16,7 @@ use crate::{
 pub struct ShellHandler;
 
 impl ShellHandler {
-    pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_interaction: bool) -> Result<()> {
+    pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_interaction: bool, auto_execute: bool) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let role_text = resolve_role_text(&cfg, None, DefaultRole::Shell);
@@ -37,7 +37,12 @@ impl ShellHandler {
 
         let mut cmd = gen_cmd(&client, &role_text, model, temperature, top_p, prompt.to_string()).await?;
         println!("{}", cmd);
-        if no_interaction { return Ok(()); }
+        if no_interaction {
+            if auto_execute {
+                run_command(&cmd);
+            }
+            return Ok(());
+        }
 
         // Interactive loop until execute or abort
         loop {

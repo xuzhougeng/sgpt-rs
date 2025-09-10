@@ -82,11 +82,7 @@ pub fn read_single_document(file_path: &str) -> Result<String> {
     }
 }
 
-/// Read document file and return its content as string (for backward compatibility).
-/// Currently supports .md, .txt, and other text-based files.
-pub fn read_document(file_path: &str) -> Result<String> {
-    read_single_document(file_path)
-}
+// removed legacy read_document wrapper; use read_single_document instead
 
 /// Combine document content with user prompt.
 /// Format: "Document content: [content]\n\nUser question: [prompt]"

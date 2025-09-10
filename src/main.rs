@@ -236,7 +236,8 @@ async fn main() -> Result<()> {
             } else
             if args.shell {
                 let no_interact = !interaction || !stdin_is_tty;
-                handlers::shell::ShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, no_interact).await
+                let explicit_no_interact = args.no_interaction; // only auto-exec when user explicitly passed --no-interaction
+                handlers::shell::ShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, no_interact, explicit_no_interact).await
             } else if args.describe_shell {
                 handlers::describe::DescribeShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, md).await
             } else if args.code {

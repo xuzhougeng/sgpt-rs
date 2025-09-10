@@ -37,19 +37,69 @@ export DEFAULT_MODEL=deepseek-chat
 
 大抵是支持所所有OpenAI接口兼容的模型。
 
-直接使用sgpt
+直接使用sgpt, 确认能正常工作
 
 ```
 $ sgpt
 Hello! This is ShellGPT. How can I assist you with your shell command needs today? 😊
 ```
 
-发送信息
+## 使用案例
 
-```
-$ sgpt "say hi in one word"
+### 对话
+
+> 默认是等待输出完成后渲染，如果需要流式输出, 可以用参数 --no-md, 或者环境变量设置export PRETTIFY_MARKDOWN=false
+
+每次就是一轮, 没有上下文
+
+```bash
+sgpt "say hi in one word"
 Hi
 ```
+
+多轮对话（开启/继续会话）, 参数`--chat <id>` 
+
+```bash
+sgpt --chat test '你现在是小爱'
+sgpt --chat test '你是谁?'
+```
+
+查看与管理会话
+
+```bash
+# 查看会话历史
+sgpt --show-chat test
+
+# 查看所有会话（及其路径）
+sgpt --list-chats
+```
+
+临时会话（不保存历史）
+
+```bash
+sgpt --chat temp "这一轮不会被保存"
+```
+
+开启一个“常驻的交互式多轮会话”, 参数`--repl <id>` 
+
+```bash
+sgpt --repl test2
+```
+
+### SHELL
+
+生成shell命令, `--shell`
+
+```bash
+sgpt --shell '统计rs文件数'
+```
+
+
+--interaction: 需要手动确认是否需要执行命令
+
+--no-interaction: 不需要交互，直接运行
+
+> 可以通过SHELL_INTERACTION来设置行为
 
 ## 文档处理功能
 
@@ -74,7 +124,7 @@ sgpt --doc file1.md --doc file2.txt --doc file3.md "your question"
 
 TODO: 当前就是将所有内容作为输入给LLM, 后续可能应该单个文件编辑
 
-## 网络搜索功能
+## 网络搜索功能 
 
 支持使用 Tavily 进行网络搜索，提供两种搜索模式：
 

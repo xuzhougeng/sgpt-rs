@@ -25,10 +25,16 @@ pub struct Cli {
     #[arg(long = "top-p", default_value_t = 1.0, value_parser = clap::value_parser!(f32))]
     pub top_p: f32,
 
-    /// Prettify markdown output.
+    /// Prettify Markdown output (buffer then render at end).
+    ///
+    /// Note: default/--chat/--repl all use SSE streaming under the hood.
+    /// - With `--md` (or `PRETTIFY_MARKDOWN=true`, default), output is buffered and printed as Markdown after completion.
+    /// - Use `--no-md` (or set `PRETTIFY_MARKDOWN=false`) for realtime streaming to the terminal.
     #[arg(long)]
     pub md: bool,
-    /// Disable markdown output.
+    /// Disable Markdown prettifying (print chunks as they arrive).
+    ///
+    /// This enables realtime streaming in default/--chat/--repl modes.
     #[arg(long = "no-md")]
     pub no_md: bool,
 
@@ -44,6 +50,9 @@ pub struct Cli {
     #[arg(long)]
     pub interaction: bool,
     /// Disable interactive mode for --shell option.
+    ///
+    /// Shell mode: if explicitly provided, the generated command will be executed automatically
+    /// (skips the confirmation menu). In non-TTY auto no-interaction cases, commands are not executed.
     #[arg(long = "no-interaction")]
     pub no_interaction: bool,
 
