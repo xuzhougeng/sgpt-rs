@@ -12,11 +12,8 @@ use crate::{
     utils::run_command,
 };
 
-#[allow(dead_code)]
-pub struct ShellHandler;
-
-impl ShellHandler {
-    pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_interaction: bool, auto_execute: bool) -> Result<()> {
+/// Generate shell command for a prompt and optionally interact/execute.
+pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_interaction: bool, auto_execute: bool) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let role_text = resolve_role_text(&cfg, None, DefaultRole::Shell);
@@ -76,5 +73,4 @@ impl ShellHandler {
         }
 
         Ok(())
-    }
 }
