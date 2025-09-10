@@ -13,26 +13,26 @@ use crate::{
 };
 
 /// Generate shell command for a prompt and optionally interact/execute.
-pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_interaction: bool, auto_execute: bool) -> Result<()> {
+pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, no_interaction: bool, auto_execute: bool) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let role_text = resolve_role_text(&cfg, None, DefaultRole::Shell);
         let default_exec = cfg.get_bool("DEFAULT_EXECUTE_SHELL_CMD");
 
         // Helper to ask LLM for a command based on a user prompt
-        async fn gen_cmd(client: &LlmClient, role_text: &str, model: &str, temperature: f32, top_p: f32, user_prompt: String) -> Result<String> {
+        async fn gen_cmd(client: &LlmClient, role_text: &str, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, user_prompt: String) -> Result<String> {
             let messages = vec![
                 ChatMessage { role: Role::System, content: role_text.to_string(), name: None, tool_calls: None },
                 ChatMessage { role: Role::User, content: user_prompt, name: None, tool_calls: None },
             ];
-            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens: None };
+            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens };
             let mut stream = client.chat_stream(messages, opts);
             let mut cmd = String::new();
             while let Some(ev) = stream.next().await { if let StreamEvent::Content(t) = ev? { cmd.push_str(&t); } }
             Ok(cmd.trim().to_string())
         }
 
-        let mut cmd = gen_cmd(&client, &role_text, model, temperature, top_p, prompt.to_string()).await?;
+        let mut cmd = gen_cmd(&client, &role_text, model, temperature, top_p, max_tokens, prompt.to_string()).await?;
         println!("{}", cmd);
         if no_interaction {
             if auto_execute {
@@ -58,14 +58,14 @@ pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, no_int
             match c.as_str() {
                 "e" | "y" => { run_command(&cmd); break; },
                 "d" => {
-                    super::describe::DescribeShellHandler::run(&cmd, model, temperature, top_p, false).await?;
+                    super::describe::DescribeShellHandler::run(&cmd, model, temperature, top_p, false, max_tokens).await?;
                     // After describe, show prompt again
                 },
                 "m" => {
                     print!("Modify with instructions: "); io::stdout().flush().ok();
                     let mut add = String::new(); io::stdin().read_line(&mut add)?;
                     let refine = format!("{}\n\n{}", prompt, add.trim());
-                    cmd = gen_cmd(&client, &role_text, model, temperature, top_p, refine).await?;
+                    cmd = gen_cmd(&client, &role_text, model, temperature, top_p, max_tokens, refine).await?;
                     println!("{}", cmd);
                 },
                 _ => { break; }, // Abort on anything else

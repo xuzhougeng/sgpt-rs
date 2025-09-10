@@ -15,7 +15,7 @@ use crate::role::{resolve_role_text, DefaultRole};
 pub struct ChatHandler;
 
 impl ChatHandler {
-    pub async fn run(chat_id: &str, prompt: &str, model: &str, temperature: f32, top_p: f32, caching: bool, markdown: bool, allow_functions: bool, role_name: Option<&str>) -> Result<()> {
+    pub async fn run(chat_id: &str, prompt: &str, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, caching: bool, markdown: bool, allow_functions: bool, role_name: Option<&str>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let session = ChatSession::from_config(&cfg);
@@ -43,7 +43,7 @@ impl ChatHandler {
             tools: None,
             parallel_tool_calls: false,
             tool_choice: None,
-            max_tokens: None,
+            max_tokens,
         };
         if allow_functions {
             let schemas: Vec<ToolSchema> = registry.schemas();

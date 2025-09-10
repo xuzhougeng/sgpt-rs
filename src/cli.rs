@@ -25,6 +25,10 @@ pub struct Cli {
     #[arg(long = "top-p", default_value_t = 1.0, value_parser = clap::value_parser!(f32))]
     pub top_p: f32,
 
+    /// Maximum tokens for the response (model-dependent upper bound).
+    #[arg(long = "max-tokens", visible_alias = "max_tokens", value_parser = clap::value_parser!(u32))]
+    pub max_tokens: Option<u32>,
+
     /// Prettify Markdown output (buffer then render at end).
     ///
     /// Note: default/--chat/--repl all use SSE streaming under the hood.

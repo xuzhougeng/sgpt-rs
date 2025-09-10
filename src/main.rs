@@ -197,12 +197,13 @@ async fn main() -> Result<()> {
             &effective_model,
             args.temperature,
             args.top_p,
+            args.max_tokens,
             md_for_show,
             args.shell,
             interaction,
             args.role.as_deref(),
         ).await,
-        (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, cache, md_for_show, functions, args.role.as_deref()).await,
+        (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md_for_show, functions, args.role.as_deref()).await,
         (None, None) => {
             if args.search {
                 if prompt.trim().is_empty() {
@@ -237,13 +238,13 @@ async fn main() -> Result<()> {
             if args.shell {
                 let no_interact = !interaction || !stdin_is_tty;
                 let explicit_no_interact = args.no_interaction; // only auto-exec when user explicitly passed --no-interaction
-                handlers::shell::run(&prompt, &effective_model, args.temperature, args.top_p, no_interact, explicit_no_interact).await
+                handlers::shell::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, no_interact, explicit_no_interact).await
             } else if args.describe_shell {
-                handlers::describe::DescribeShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, md).await
+                handlers::describe::DescribeShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, md, args.max_tokens).await
             } else if args.code {
-                handlers::code::CodeHandler::run(&prompt, &effective_model, args.temperature, args.top_p).await
+                handlers::code::CodeHandler::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens).await
             } else {
-                handlers::default::DefaultHandler::run(&prompt, &effective_model, args.temperature, args.top_p, cache, md, functions, args.role.as_deref()).await
+                handlers::default::DefaultHandler::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md, functions, args.role.as_deref()).await
             }
         }
         _ => Err(anyhow!("--chat and --repl cannot be used together")),

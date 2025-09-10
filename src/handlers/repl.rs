@@ -19,7 +19,7 @@ use crate::{
 pub struct ReplHandler;
 
 impl ReplHandler {
-    pub async fn run(chat_id: &str, init_prompt: Option<&str>, model: &str, temperature: f32, top_p: f32, markdown: bool, is_shell: bool, allow_interaction: bool, role_name: Option<&str>) -> Result<()> {
+    pub async fn run(chat_id: &str, init_prompt: Option<&str>, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, markdown: bool, is_shell: bool, allow_interaction: bool, role_name: Option<&str>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let session = ChatSession::from_config(&cfg);
@@ -27,6 +27,9 @@ impl ReplHandler {
         if chat_id == "temp" { session.invalidate(chat_id); }
 
         println!("Entering REPL mode, press Ctrl+C to exit.");
+        if is_shell && allow_interaction {
+            println!("Shell REPL shortcuts: e=execute, r=repeat, d=describe, p=print, m=modify; type exit() to quit.");
+        }
 
         // start session with system role if not exists
         let system_role_text = if is_shell { default_role_text(&cfg, DefaultRole::Shell) } else { resolve_role_text(&cfg, role_name, DefaultRole::Default) };
@@ -49,7 +52,7 @@ impl ReplHandler {
                 tools: None,
                 parallel_tool_calls: false,
                 tool_choice: None,
-                max_tokens: None,
+                max_tokens,
             };
             let mut stream = client.chat_stream(msgs.clone(), opts);
             let mut assistant_text = String::new();
@@ -79,7 +82,7 @@ impl ReplHandler {
             if prompt.trim().is_empty() { return Ok(()); }
             let mut msgs = history_ref.clone();
             msgs.push(ChatMessage { role: Role::User, content: prompt, name: None, tool_calls: None });
-            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens: None };
+            let opts = ChatOptions { model: model.to_string(), temperature, top_p, tools: None, parallel_tool_calls: false, tool_choice: None, max_tokens };
             let mut stream = client.chat_stream(msgs.clone(), opts);
             let mut cmd = String::new();
             futures::executor::block_on(async {
@@ -130,7 +133,7 @@ impl ReplHandler {
                 if allow_interaction {
                     let current = last_cmd.clone();
                     if prompt == "e" { if !current.is_empty() { run_command(&current); } continue; }
-                    if prompt == "d" { if !current.is_empty() { DescribeShellHandler::run(&current, model, temperature, top_p, false).await?; } continue; }
+                    if prompt == "d" { if !current.is_empty() { DescribeShellHandler::run(&current, model, temperature, top_p, false, max_tokens).await?; } continue; }
                     if prompt == "r" { if !current.is_empty() { run_command(&current); } continue; }
                     if prompt == "p" { if !current.is_empty() { println!("{}", current); } continue; }
                     if prompt == "m" {
