@@ -117,6 +117,11 @@ impl LlmClient {
         messages: Vec<ChatMessage>,
         opts: ChatOptions,
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>> {
+        // Check for fake mode
+        if opts.model.to_lowercase() == "fake" {
+            return Box::pin(self.fake_stream(messages, opts));
+        }
+
         let http = self.http.clone();
         let base_url = self.base_url.clone();
         let api_key = self.api_key.clone();
@@ -239,6 +244,43 @@ impl LlmClient {
                 }
             }
         })
+    }
+
+    /// Create a fake stream that outputs the request content instead of calling the API
+    fn fake_stream(
+        &self,
+        messages: Vec<ChatMessage>,
+        opts: ChatOptions,
+    ) -> impl Stream<Item = Result<StreamEvent>> + Send {
+        try_stream! {
+            // Construct the request body that would be sent to the API
+            let mut body = serde_json::json!({
+                "model": opts.model,
+                "temperature": opts.temperature,
+                "top_p": opts.top_p,
+                "messages": messages,
+                "stream": true,
+                "max_tokens": opts.max_tokens.unwrap_or(512)
+            });
+
+            // Add tools if present
+            if let Some(tools) = &opts.tools {
+                body["tools"] = serde_json::to_value(tools)?;
+                body["parallel_tool_calls"] = serde_json::json!(opts.parallel_tool_calls);
+                if let Some(choice) = &opts.tool_choice {
+                    body["tool_choice"] = serde_json::json!(choice);
+                }
+            }
+
+            // Format and output the debug information
+            let formatted = serde_json::to_string_pretty(&body)?;
+            
+            yield StreamEvent::Content("=== FAKE MODEL DEBUG OUTPUT ===\n".to_string());
+            yield StreamEvent::Content("Request that would be sent to LLM API:\n\n".to_string());
+            yield StreamEvent::Content(formatted);
+            yield StreamEvent::Content("\n\n=== END DEBUG OUTPUT ===\n".to_string());
+            yield StreamEvent::Done;
+        }
     }
 }
 

@@ -58,6 +58,7 @@
   - 内部初始化 `reqwest::Client`（超时为 `REQUEST_TIMEOUT` 秒）。
 
 - 调用：`chat_stream(&self, messages: Vec<ChatMessage>, opts: ChatOptions) -> Stream<Item = Result<StreamEvent>>`
+  - **特殊处理**：当 `opts.model` 为 `"fake"` 时，进入调试模式，不发送真实 API 请求，而是输出完整的请求体 JSON 格式供调试使用。
   - 请求头：`Content-Type: application/json`；`Accept: text/event-stream`；如有 `OPENAI_API_KEY` 则附带 `Authorization`。
   - 请求体：
     - 基本字段：`model`、`temperature`、`top_p`、`messages`、`stream: true`、`max_tokens`（未指定则为 `512`）。
@@ -118,9 +119,75 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+## 调试模式（Fake Model）
+
+当使用 `--model fake` 时，客户端会进入特殊的调试模式：
+
+### 功能特点
+
+- **不发送 API 请求**：避免消耗 API 额度和网络流量
+- **显示完整请求内容**：以格式化 JSON 输出本来要发送给 LLM 的请求体
+- **支持所有功能**：与文档处理、函数调用、角色系统等功能完全兼容
+- **无需 API Key**：可在未配置 `OPENAI_API_KEY` 的环境中使用
+
+### 输出格式
+
+```
+=== FAKE MODEL DEBUG OUTPUT ===
+Request that would be sent to LLM API:
+
+{
+  "model": "fake",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user", 
+      "content": "Hello world"
+    }
+  ],
+  "temperature": 0.0,
+  "top_p": 1.0,
+  "max_tokens": 512,
+  "stream": true
+}
+
+=== END DEBUG OUTPUT ===
+```
+
+### 使用场景
+
+- **调试文档处理**：`sgpt --model fake --doc file.pdf "总结文档"`，查看 PDF 内容是否正确提取并包含在请求中
+- **验证参数传递**：`sgpt --model fake --temperature 0.7 --max-tokens 1000 "test"`，确认参数设置
+- **测试角色配置**：`sgpt --model fake --role researcher "分析数据"`，检查系统角色是否正确应用
+- **函数调用调试**：`sgpt --model fake --functions "搜索信息"`，查看工具定义和调用配置
+- **离线开发**：在无网络环境下验证功能逻辑
+
+### CLI 使用示例
+
+```bash
+# 基本调试
+sgpt --model fake "Hello world"
+
+# 文档处理调试
+sgpt --model fake --doc document.pdf "What are the key points?"
+
+# 参数调试
+sgpt --model fake --temperature 0.5 --top-p 0.9 --max-tokens 2000 "test"
+
+# 角色功能调试  
+sgpt --model fake --role researcher "Analyze this data"
+
+# 函数调用调试
+sgpt --model fake --functions "Search for recent news about AI"
+```
+
 ## 兼容性与注意事项
 
 - 若后端不支持 OpenAI 工具协议，使用 `tools`/`tool_choice`/`parallel_tool_calls` 可能导致 400/422 错误，请按提示禁用相应功能。
 - `API_BASE_URL` 会被规范化为以 `/v1` 结尾；若已包含 `/v1` 则不重复添加。
 - SSE 以行分割并以 `data:` 前缀承载 JSON；`[DONE]` 用于指示流结束。
 - 本模块不主动重试；建议在上层根据需要实现重试与超时处理。
+- **调试模式**：使用 `fake` 模型名（不区分大小写）可触发调试输出，适用于开发和测试场景。

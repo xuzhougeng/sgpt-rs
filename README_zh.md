@@ -144,6 +144,7 @@ sgpt --doc file1.md --doc file2.txt --doc file3.md "your question"
 ```
 
 **支持的文件类型：**
+- `.pdf` - PDF文件, 提取文本作为输入, 没有图像OCR
 - `.md` - Markdown 文件
 - `.txt` - 纯文本文件  
 - `.rst` - reStructuredText 文件
