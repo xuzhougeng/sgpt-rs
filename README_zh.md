@@ -121,6 +121,16 @@ find . -name "*.rs" -type f | wc -l
 >>>  
 ```
 
+Windows 与 PowerShell 支持
+
+- 指定目标 Shell：使用 `--target-shell` 强制生成特定 Shell 的命令。
+  - 可选值：`auto`、`powershell`、`cmd`、`bash`、`zsh`、`fish`、`sh`
+  - 示例：
+    - 生成 PowerShell 命令：`sgpt -s --target-shell powershell "查看当前目录下包含 foo 的文件"`
+    - 生成 CMD 命令：`sgpt -s --target-shell cmd "打印 PATH 并退出"`
+- 交互执行：在 Windows 上会根据 `--target-shell` 或自动检测优先使用 PowerShell 执行（否则回退到 CMD）。
+- 生成提示优化：当目标为 PowerShell 时，提示会引导模型优先使用 PowerShell 原生命令（如 `Get-ChildItem`、`Select-String`），并使用 `;` 连接多步命令（而不是 `&&`）。
+
 ## 文档处理功能
 
 支持直接处理文档文件，将文件内容作为上下文进行对话：
@@ -185,18 +195,9 @@ sgpt -e "Who is Leo Messi?"
 
 程序会优先输出结果标题、URL 与摘要；若结构不含常见字段，将以 JSON 格式原样输出。
 
-## Windows 与 PowerShell 支持
+## 详细文档
 
-- 指定目标 Shell：使用 `--target-shell` 强制生成特定 Shell 的命令。
-  - 可选值：`auto`、`powershell`、`cmd`、`bash`、`zsh`、`fish`、`sh`
-  - 示例：
-    - 生成 PowerShell 命令：`sgpt -s --target-shell powershell "查看当前目录下包含 foo 的文件"`
-    - 生成 CMD 命令：`sgpt -s --target-shell cmd "打印 PATH 并退出"`
-- 交互执行：在 Windows 上会根据 `--target-shell` 或自动检测优先使用 PowerShell 执行（否则回退到 CMD）。
-- 生成提示优化：当目标为 PowerShell 时，提示会引导模型优先使用 PowerShell 原生命令（如 `Get-ChildItem`、`Select-String`），并使用 `;` 连接多步命令（而不是 `&&`）。
+- `doc/Config.md`: .config/sgpt_rs/.sgptrc 可以配置的参数说明
+- `doc/Role.md`: 跟角色配置相关的参数的详细说明
+- `doc/Model.md`: 项目内置兼容 OpenAI Chat Completions 的流式客户端，支持工具调用（function-calling）。关于配置、数据结构、流式事件、错误提示与使用示例
 
-## 模型与 LLM 客户端
-
-项目内置兼容 OpenAI Chat Completions 的流式客户端，支持工具调用（function-calling）。关于配置、数据结构、流式事件、错误提示与使用示例，请参阅：
-
-- `doc/Model.md`

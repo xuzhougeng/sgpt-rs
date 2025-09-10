@@ -2,7 +2,7 @@
 
 English | [中文](README_zh.md)
 
-This project is inspired by https://github.com/TheR1D/shell_gpt and is developed using Rust.
+This project is inspired by https://github.com/TheR1D/shell_gpt and is developed using Rust with assistance from Claude-Code and Codex, aiming to reduce configuration complexity.
 
 ## Quick Start
 
@@ -17,6 +17,8 @@ Move the compiled binary file to your executable directory.
 mv target/release/sgpt ~/.local/bin
 ```
 
+Alternatively, you can download pre-compiled binary files from <https://github.com/xuzhougeng/sgpt-rs/releases/>.
+
 Edit ~/.config/sgpt_rs/.sgptrc to set DeepSeek as the default model.
 
 ```yaml
@@ -25,7 +27,7 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 DEFAULT_MODEL=deepseek-chat
 ```
 
-You can also set directly in environment variables.
+You can also configure directly in environment variables or in ~/.zshrc, ~/.bashrc:
 
 ```bash
 export API_BASE_URL=https://api.deepseek.com
@@ -33,33 +35,110 @@ export OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export DEFAULT_MODEL=deepseek-chat
 ```
 
-Use sgpt directly.
+Generally supports all OpenAI API-compatible models.
+
+Use sgpt directly to confirm it works properly:
 
 ```
 $ sgpt
 Hello! This is ShellGPT. How can I assist you with your shell command needs today? 😊
 ```
 
-Send a message.
+## Usage Examples
 
-```
-$ sgpt "say hi in one word"
+### Conversation
+
+> By default, it waits for output completion before rendering. If you need streaming output, use the `--no-md` parameter or set the environment variable `export PRETTIFY_MARKDOWN=false`
+
+Each interaction is a single round without context:
+
+```bash
+sgpt "say hi in one word"
 Hi
 ```
+
+Multi-turn conversation (start/continue session), parameter `--chat <id>`:
+
+```bash
+sgpt --chat test 'You are now Xiao Ai'
+sgpt --chat test 'Who are you?'
+```
+
+View and manage sessions:
+
+```bash
+# View session history
+sgpt --show-chat test
+
+# View all sessions (and their paths)
+sgpt --list-chats
+```
+
+Temporary session (don't save history):
+
+```bash
+sgpt --chat temp "This round won't be saved"
+```
+
+Start a "persistent interactive multi-turn session", parameter `--repl <id>`:
+
+```bash
+sgpt --repl test2
+```
+
+### SHELL
+
+Generate shell commands, `--shell`:
+
+```bash
+sgpt --shell 'count rs files'
+```
+
+This will pop up a prompt `[E]xecute, [M]odify, [D]escribe, [A]bort:` for you to choose an action:
+
+- [E]xecute: Execute
+- [M]odify: Found the command is wrong, give more hints
+- [D]escribe: Explain this command
+- [A]bort: Exit directly without execution
+
+This behavior can be set through the following two parameters or via SHELL_INTERACTION:
+
+- `--interaction`: Manual confirmation required for command execution, default behavior
+- `--no-interaction`: No interaction needed, run directly
+
+Adding `--repl <id>` on top of shell enters interactive command line. After getting the command line, you can use 'e' to execute:
+
+```bash
+sgpt --shell --repl temp
+Entering REPL mode, press Ctrl+C to exit.
+Shell REPL shortcuts: e=execute, r=repeat, d=describe, p=print, m=modify; type exit() to quit.
+>>> find rust file count
+find . -name "*.rs" -type f | wc -l
+>>> e
+22
+>>>  
+```
+
+### Windows & PowerShell Support
+
+- Specify target shell: Use `--target-shell` to force generation of specific shell commands.
+  - Available values: `auto`, `powershell`, `cmd`, `bash`, `zsh`, `fish`, `sh`
+  - Examples:
+    - Generate PowerShell commands: `sgpt -s --target-shell powershell "view files containing foo in current directory"`
+    - Generate CMD commands: `sgpt -s --target-shell cmd "print PATH and exit"`
+- Interactive execution: On Windows, will use PowerShell for execution based on `--target-shell` or auto-detection (otherwise fallback to CMD).
+- Generation prompt optimization: When targeting PowerShell, prompts guide the model to prioritize PowerShell native commands (like `Get-ChildItem`, `Select-String`) and use `;` to connect multi-step commands (instead of `&&`).
 
 ## Document Processing
 
 Support for directly processing document files, using file content as context for conversations:
 
 ```bash
-# Process document with question
-sgpt --doc README.md "What is this project about?"
+# Single file
+sgpt --doc document.md "your question"
 
-# Process document only (equivalent to cat README.md | sgpt)
-sgpt --doc notes.txt
-
-# Combine with other parameters
-sgpt --doc changelog.log "What changed recently?" --md
+# Multiple files
+sgpt --doc file1.md --doc file2.txt --doc file3.md "your question"
 ```
 
 **Supported File Types:**
@@ -69,7 +148,9 @@ sgpt --doc changelog.log "What changed recently?" --md
 - `.log` - Log files
 - Files without extension
 
-This feature is equivalent to `cat xxx.md | sgpt 'xxx'` but more convenient with direct file path usage.
+This feature is equivalent to `cat xxx.md yyy.md | sgpt 'xxx'` but more convenient with direct file path usage.
+
+TODO: Currently just passes all content as input to LLM, may implement individual file editing later.
 
 ## Web Search Features
 
@@ -112,8 +193,8 @@ Enhanced search workflow:
 
 The program prioritizes outputting result titles, URLs, and summaries. If the structure doesn't contain common fields, it will output in JSON format as-is.
 
-## LLM Client
+## Detailed Documentation
 
-This project includes an OpenAI-compatible, streaming Chat Completions client with tool-calls support. For API, config, streaming events, error hints, and a Rust usage example, see:
-
-- `doc/Model.md`
+- `doc/Config.md`: Parameter descriptions for configurable options in .config/sgpt_rs/.sgptrc
+- `doc/Role.md`: Detailed description of role configuration related parameters  
+- `doc/Model.md`: Built-in OpenAI Chat Completions compatible streaming client with tool-calling support. Covers configuration, data structures, streaming events, error hints and usage examples
