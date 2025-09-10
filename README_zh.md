@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-该项目受 https://github.com/TheR1D/shell_gpt 启发, 在Claude-Code, Codex, Cursor协助下，使用 Rust 进行开发
+该项目受 https://github.com/TheR1D/shell_gpt 启发, 在Claude-Code, Codex 协助下，使用 Rust 进行开发, 旨在降低配置难度
 
 ## 快速开始
 
@@ -27,7 +27,7 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 DEFAULT_MODEL=deepseek-chat
 ```
 
-也可以直接在环境变量
+也可以直接在环境变量或者在~/.zshrc, ~/.bashrc中配置
 
 ```bash
 export API_BASE_URL=https://api.deepseek.com
@@ -94,12 +94,32 @@ sgpt --repl test2
 sgpt --shell '统计rs文件数'
 ```
 
+此时他会弹出一个`[E]xecute, [M]odify, [D]escribe, [A]bort:`让你去选择操作
 
---interaction: 需要手动确认是否需要执行命令
+- [E]xecute 执行
+- [M]odify 发现命令不对，再给点提示
+- [D]escribe 解释这个命令
+- [A]bort 直接退出不执行
 
---no-interaction: 不需要交互，直接运行
 
-> 可以通过SHELL_INTERACTION来设置行为
+关于这个行为可以通过如下两个参数或通过SHELL_INTERACTION来设置行为
+
+- `--interaction`: 需要手动确认是否需要执行命令，默认行为
+- `--no-interaction`: 不需要交互，直接运行
+
+
+在shell的基础上增加 `--repl <id>`  就可以进入交互式命令行, 在获取命令行后, 可以用e来执行
+
+```bash
+sgpt --shell --repl temp
+Entering REPL mode, press Ctrl+C to exit.
+Shell REPL shortcuts: e=execute, r=repeat, d=describe, p=print, m=modify; type exit() to quit.
+>>> 查找rust文件的数量
+find . -name "*.rs" -type f | wc -l
+>>> e
+22
+>>>  
+```
 
 ## 文档处理功能
 
