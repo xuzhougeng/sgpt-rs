@@ -31,6 +31,7 @@ The application is structured around a handler-based architecture:
   - `describe.rs`: Shell command explanation
   - `chat.rs`: Persistent chat sessions
   - `repl.rs`: Interactive REPL sessions
+  - `enhanced_search.rs`: Enhanced search functionality
 
 ### Supporting Systems
 - **`src/config/`**: Configuration management (env vars + `~/.config/sgpt_rs/.sgptrc`)
@@ -41,7 +42,10 @@ The application is structured around a handler-based architecture:
 - **`src/functions/`**: Function calling capabilities
 - **`src/integration/`**: Shell integration (bash/zsh completion)
 - **`src/external/`**: Third-party integrations (Tavily search)
-- **`src/utils/`**: Common utilities
+- **`src/utils/`**: Common utilities including:
+  - `command.rs`: Shell command execution across platforms
+  - `document.rs`: Document reading and processing for multiple file formats
+  - `pdf.rs`: PDF text extraction utilities
 
 ### Key Patterns
 - Uses `anyhow::Result` for error handling throughout

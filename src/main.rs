@@ -9,6 +9,7 @@ mod utils;
 mod integration;
 mod llm;
 mod external;
+mod tui;
 
 use anyhow::{anyhow, bail, Result};
 use config::Config;
