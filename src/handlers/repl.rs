@@ -1,7 +1,6 @@
 //! REPL handler with TUI interface using Ratatui.
 
 use anyhow::Result;
-use is_terminal::IsTerminal;
 use std::io;
 
 use crate::tui::run_tui_repl;

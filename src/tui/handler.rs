@@ -3,7 +3,6 @@
 use std::io;
 use std::time::Duration;
 
-use is_terminal::IsTerminal;
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
@@ -16,9 +15,7 @@ use tokio::sync::mpsc;
 use crate::{
     cache::ChatSession,
     config::Config,
-    handlers::describe,
     llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
-    utils::run_command,
 };
 use super::{
     app::{App, InputMode},
