@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     System,
@@ -250,37 +250,106 @@ impl LlmClient {
     fn fake_stream(
         &self,
         messages: Vec<ChatMessage>,
-        opts: ChatOptions,
+        _opts: ChatOptions,
     ) -> impl Stream<Item = Result<StreamEvent>> + Send {
         try_stream! {
-            // Construct the request body that would be sent to the API
-            let mut body = serde_json::json!({
-                "model": opts.model,
-                "temperature": opts.temperature,
-                "top_p": opts.top_p,
-                "messages": messages,
-                "stream": true,
-                "max_tokens": opts.max_tokens.unwrap_or(512)
-            });
+            // Get the last user message to respond to
+            let last_user_message = messages.iter()
+                .rev()
+                .find(|msg| msg.role == Role::User)
+                .map(|msg| msg.content.as_str())
+                .unwrap_or("");
 
-            // Add tools if present
-            if let Some(tools) = &opts.tools {
-                body["tools"] = serde_json::to_value(tools)?;
-                body["parallel_tool_calls"] = serde_json::json!(opts.parallel_tool_calls);
-                if let Some(choice) = &opts.tool_choice {
-                    body["tool_choice"] = serde_json::json!(choice);
-                }
+            // Check if this is a shell mode based on system message
+            let is_shell_mode = messages.iter()
+                .any(|msg| msg.role == Role::System && 
+                     (msg.content.contains("shell command") || 
+                      msg.content.contains("Shell Command Generator")));
+
+            // Generate appropriate fake response
+            let response = if is_shell_mode {
+                generate_fake_shell_response(last_user_message)
+            } else {
+                generate_fake_chat_response(last_user_message)
+            };
+
+            // Stream the response character by character to simulate real streaming
+            for chunk in response.chars().collect::<Vec<_>>().chunks(3) {
+                let chunk_str: String = chunk.iter().collect();
+                yield StreamEvent::Content(chunk_str);
+                
+                // Small delay to simulate network latency (in a real async context)
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
 
-            // Format and output the debug information
-            let formatted = serde_json::to_string_pretty(&body)?;
-            
-            yield StreamEvent::Content("=== FAKE MODEL DEBUG OUTPUT ===\n".to_string());
-            yield StreamEvent::Content("Request that would be sent to LLM API:\n\n".to_string());
-            yield StreamEvent::Content(formatted);
-            yield StreamEvent::Content("\n\n=== END DEBUG OUTPUT ===\n".to_string());
             yield StreamEvent::Done;
         }
+    }
+}
+
+/// Generate fake shell command responses
+fn generate_fake_shell_response(user_input: &str) -> String {
+    let input_lower = user_input.to_lowercase();
+    
+    let response = if input_lower.contains("list") || input_lower.contains("show") {
+        if input_lower.contains("file") {
+            "ls -la"
+        } else if input_lower.contains("process") {
+            "ps aux"
+        } else {
+            "ls"
+        }
+    } else if input_lower.contains("find") {
+        if input_lower.contains("file") {
+            "find . -name \"*.txt\" -type f"
+        } else {
+            "find . -name \"*pattern*\""
+        }
+    } else if input_lower.contains("kill") || input_lower.contains("stop") {
+        "pkill process_name"
+    } else if input_lower.contains("copy") || input_lower.contains("cp") {
+        "cp source.txt destination.txt"
+    } else if input_lower.contains("move") || input_lower.contains("mv") {
+        "mv oldname.txt newname.txt"
+    } else if input_lower.contains("download") {
+        "curl -O https://example.com/file"
+    } else if input_lower.contains("install") {
+        "sudo apt install package-name"
+    } else if input_lower.contains("git") {
+        if input_lower.contains("commit") {
+            "git add . && git commit -m \"your message\""
+        } else if input_lower.contains("push") {
+            "git push origin main"
+        } else {
+            "git status"
+        }
+    } else if input_lower.contains("docker") {
+        "docker ps -a"
+    } else {
+        // Default response for unrecognized patterns
+        return format!("# Fake response for: {}\necho \"This is a simulated shell command response\"", user_input);
+    };
+    response.to_string()
+}
+
+/// Generate fake chat responses  
+fn generate_fake_chat_response(user_input: &str) -> String {
+    let input_lower = user_input.to_lowercase();
+    
+    if input_lower.contains("hello") || input_lower.contains("hi") {
+        "Hello! I'm a fake AI assistant for testing purposes. How can I help you today?".to_string()
+    } else if input_lower.contains("how are you") {
+        "I'm doing well, thanks for asking! I'm just a simulated response to help test the TUI interface.".to_string()
+    } else if input_lower.contains("what") && input_lower.contains("time") {
+        "I'm a fake model, so I don't have access to real-time information. But I'd estimate it's sometime today!".to_string()
+    } else if input_lower.contains("help") {
+        "I'm a fake AI assistant for testing. I can:\n- Answer questions (with fake answers)\n- Generate fake shell commands in shell mode\n- Test the streaming interface\n\nTry asking me anything!".to_string()
+    } else if input_lower.contains("code") || input_lower.contains("programming") {
+        format!("Here's some fake code related to your question about '{}':\n\n```rust\nfn fake_function() {{\n    println!(\"This is fake code for testing\");\n}}\n```", user_input)
+    } else if user_input.trim().is_empty() {
+        "I notice you sent an empty message. Feel free to ask me anything!".to_string()
+    } else {
+        format!("I understand you're asking about: \"{}\"\n\nThis is a fake response to test the TUI streaming interface. In a real scenario, I would provide helpful information about your query. The fake model is working correctly if you can see this message streaming in character by character!", user_input)
     }
 }
 
