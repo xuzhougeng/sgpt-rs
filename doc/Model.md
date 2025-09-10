@@ -13,6 +13,10 @@
 客户端从全局配置中读取以下键（环境变量或 `~/.config/sgpt_rs/.sgptrc`）：
 
 - `API_BASE_URL`：服务端根地址。默认值特殊为 `default`，将解析为 `https://api.openai.com/v1`；否则会确保以 `/v1` 结尾（会自动补齐）。
+  - 版本补全策略（Strategy A）：若基础 URL 中已包含形如 `/v{数字}` 的版本段（例如 `/v4`），将保持不变；否则自动补齐 `/v1`。例如：
+    - `https://api.openai.com` -> `https://api.openai.com/v1`
+    - `https://api.openai.com/v1` -> 保持不变
+    - `https://open.bigmodel.cn/api/paas/v4` -> 保持不变（不会再追加 `/v1`）
 - `OPENAI_API_KEY`：用于设置 `Authorization: Bearer <key>` 头；未设置则不发送鉴权头。
 - `REQUEST_TIMEOUT`：请求超时秒数，默认 `60`。
 
@@ -40,7 +44,7 @@
   - `tools: Option<Vec<ToolSchema>>`
   - `parallel_tool_calls: bool`
   - `tool_choice: Option<String>`（如 `"auto"`）
-  - `max_tokens: Option<u32>`（未设置时，客户端会在请求体中使用 `512`）
+  - `max_tokens: Option<u32>`（未设置时，客户端会在请求体中使用 `512`；可通过 CLI `--max-tokens`/`--max_tokens` 指定）
 - 流事件 `StreamEvent`：
   - `Content(String)`：内容增量分片
   - `ToolCallDelta { name: Option<String>, arguments: Option<String> }`：工具调用增量（函数名与参数可能分别推送）
@@ -120,4 +124,3 @@ async fn main() -> anyhow::Result<()> {
 - `API_BASE_URL` 会被规范化为以 `/v1` 结尾；若已包含 `/v1` 则不重复添加。
 - SSE 以行分割并以 `data:` 前缀承载 JSON；`[DONE]` 用于指示流结束。
 - 本模块不主动重试；建议在上层根据需要实现重试与超时处理。
-

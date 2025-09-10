@@ -90,11 +90,19 @@ impl LlmClient {
             api_base_url
         };
         let trimmed = base_url.trim_end_matches('/');
-        if !trimmed.ends_with("/v1") && !trimmed.contains("/v1/") {
-            base_url = format!("{}/v1", trimmed);
+        // Strategy A: if base has any version segment like /v{digits}, keep as-is; otherwise append /v1
+        let has_version_seg = {
+            let segs = trimmed.split('/');
+            segs.clone().any(|s| {
+                let s = s.trim();
+                s.len() > 1 && s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit())
+            })
+        };
+        base_url = if has_version_seg {
+            trimmed.to_string()
         } else {
-            base_url = trimmed.to_string();
-        }
+            format!("{}/v1", trimmed)
+        };
         let api_key = cfg.get("OPENAI_API_KEY");
 
         let http = reqwest::Client::builder()
