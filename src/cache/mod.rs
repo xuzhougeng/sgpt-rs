@@ -7,9 +7,6 @@ use anyhow::Result;
 
 use crate::{ config::Config, llm::ChatMessage };
 
-#[allow(dead_code)]
-pub struct Cache;
-
 #[derive(Debug, Clone)]
 pub struct ChatSession {
     length: usize,
@@ -68,7 +65,6 @@ impl ChatSession {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn list(&self) -> Vec<PathBuf> {
         if let Ok(read_dir) = fs::read_dir(&self.storage_path) {
             let mut files: Vec<PathBuf> = read_dir.filter_map(|e| e.ok().map(|e| e.path())).collect();

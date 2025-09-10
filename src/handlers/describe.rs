@@ -10,11 +10,7 @@ use crate::{
     role::{default_role_text, DefaultRole},
 };
 
-#[allow(dead_code)]
-pub struct DescribeShellHandler;
-
-impl DescribeShellHandler {
-    pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, markdown: bool, max_tokens: Option<u32>) -> Result<()> {
+pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, markdown: bool, max_tokens: Option<u32>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let role_text = default_role_text(&cfg, DefaultRole::DescribeShell);
@@ -36,5 +32,4 @@ impl DescribeShellHandler {
         }
         if markdown && !text.is_empty() { MarkdownPrinter::default().print(&text); }
         Ok(())
-    }
 }

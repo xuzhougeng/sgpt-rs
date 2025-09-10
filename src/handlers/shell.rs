@@ -58,7 +58,7 @@ pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, max_to
             match c.as_str() {
                 "e" | "y" => { run_command(&cmd); break; },
                 "d" => {
-                    super::describe::DescribeShellHandler::run(&cmd, model, temperature, top_p, false, max_tokens).await?;
+                    super::describe::run(&cmd, model, temperature, top_p, false, max_tokens).await?;
                     // After describe, show prompt again
                 },
                 "m" => {

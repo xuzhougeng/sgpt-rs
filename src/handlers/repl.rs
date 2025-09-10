@@ -11,15 +11,11 @@ use crate::{
     llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
     printer::MarkdownPrinter,
     role::{default_role_text, resolve_role_text, DefaultRole},
-    handlers::describe::DescribeShellHandler,
+    handlers::describe,
     utils::run_command,
 };
 
-#[allow(dead_code)]
-pub struct ReplHandler;
-
-impl ReplHandler {
-    pub async fn run(chat_id: &str, init_prompt: Option<&str>, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, markdown: bool, is_shell: bool, allow_interaction: bool, role_name: Option<&str>) -> Result<()> {
+pub async fn run(chat_id: &str, init_prompt: Option<&str>, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, markdown: bool, is_shell: bool, allow_interaction: bool, role_name: Option<&str>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let session = ChatSession::from_config(&cfg);
@@ -133,7 +129,7 @@ impl ReplHandler {
                 if allow_interaction {
                     let current = last_cmd.clone();
                     if prompt == "e" { if !current.is_empty() { run_command(&current); } continue; }
-                    if prompt == "d" { if !current.is_empty() { DescribeShellHandler::run(&current, model, temperature, top_p, false, max_tokens).await?; } continue; }
+                    if prompt == "d" { if !current.is_empty() { describe::run(&current, model, temperature, top_p, false, max_tokens).await?; } continue; }
                     if prompt == "r" { if !current.is_empty() { run_command(&current); } continue; }
                     if prompt == "p" { if !current.is_empty() { println!("{}", current); } continue; }
                     if prompt == "m" {
@@ -152,5 +148,4 @@ impl ReplHandler {
         }
 
         Ok(())
-    }
 }

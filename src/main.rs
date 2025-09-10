@@ -131,13 +131,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     if args.list_chats {
-        let dir = cfg.chat_cache_path();
-        if dir.exists() {
-            for entry in std::fs::read_dir(dir)? {
-                let e = entry?;
-                println!("{}", e.path().display());
-            }
-        }
+        let session = cache::ChatSession::from_config(&cfg);
+        for p in session.list() { println!("{}", p.display()); }
         return Ok(());
     }
 
@@ -191,7 +186,7 @@ async fn main() -> Result<()> {
 
     // Route to handler
     match (args.repl.as_deref(), args.chat.as_deref()) {
-        (Some(repl_id), None) => handlers::repl::ReplHandler::run(
+        (Some(repl_id), None) => handlers::repl::run(
             repl_id,
             if prompt.is_empty() { None } else { Some(prompt.as_str()) },
             &effective_model,
@@ -203,7 +198,7 @@ async fn main() -> Result<()> {
             interaction,
             args.role.as_deref(),
         ).await,
-        (None, Some(chat_id)) => handlers::chat::ChatHandler::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md_for_show, functions, args.role.as_deref()).await,
+        (None, Some(chat_id)) => handlers::chat::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md_for_show, functions, args.role.as_deref()).await,
         (None, None) => {
             if args.search {
                 if prompt.trim().is_empty() {
@@ -240,11 +235,11 @@ async fn main() -> Result<()> {
                 let explicit_no_interact = args.no_interaction; // only auto-exec when user explicitly passed --no-interaction
                 handlers::shell::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, no_interact, explicit_no_interact).await
             } else if args.describe_shell {
-                handlers::describe::DescribeShellHandler::run(&prompt, &effective_model, args.temperature, args.top_p, md, args.max_tokens).await
+                handlers::describe::run(&prompt, &effective_model, args.temperature, args.top_p, md, args.max_tokens).await
             } else if args.code {
-                handlers::code::CodeHandler::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens).await
+                handlers::code::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens).await
             } else {
-                handlers::default::DefaultHandler::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md, functions, args.role.as_deref()).await
+                handlers::default::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md, functions, args.role.as_deref()).await
             }
         }
         _ => Err(anyhow!("--chat and --repl cannot be used together")),

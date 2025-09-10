@@ -78,7 +78,6 @@ impl Config {
         PathBuf::from(self.get("CACHE_PATH").unwrap())
     }
 
-    #[allow(dead_code)]
     pub fn roles_path(&self) -> PathBuf {
         PathBuf::from(self.get("ROLE_STORAGE_PATH").unwrap())
     }

@@ -11,11 +11,7 @@ use crate::functions::Registry;
 use crate::llm::{FunctionCall, ToolCall, ToolSchema};
 use crate::role::{resolve_role_text, DefaultRole};
 
-#[allow(dead_code)]
-pub struct DefaultHandler;
-
-impl DefaultHandler {
-    pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, caching: bool, markdown: bool, allow_functions: bool, role_name: Option<&str>) -> Result<()> {
+pub async fn run(prompt: &str, model: &str, temperature: f32, top_p: f32, max_tokens: Option<u32>, caching: bool, markdown: bool, allow_functions: bool, role_name: Option<&str>) -> Result<()> {
         let cfg = Config::load();
         let client = LlmClient::from_config(&cfg)?;
         let base_url = cfg.get("API_BASE_URL").unwrap_or_else(|| "default".into());
@@ -101,5 +97,4 @@ impl DefaultHandler {
             let _ = req_cache.set(&key, &assistant_text);
         }
         Ok(())
-    }
 }
