@@ -37,7 +37,9 @@ bindkey ^l _sgpt_zsh
 pub fn install() -> Result<()> {
     // Only non-Windows for now
     if cfg!(windows) {
-        return Err(anyhow!("Shell integrations only available for ZSH and Bash on Unix-like shells"));
+        return Err(anyhow!(
+            "Shell integrations only available for ZSH and Bash on Unix-like shells"
+        ));
     }
 
     let shell = std::env::var("SHELL").unwrap_or_default();
@@ -67,10 +69,7 @@ pub fn install() -> Result<()> {
 }
 
 fn append_file(path: &std::path::Path, content: &str) -> Result<()> {
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
     f.write_all(content.as_bytes())?;
     Ok(())
 }

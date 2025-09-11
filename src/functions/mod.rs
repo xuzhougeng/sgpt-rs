@@ -1,11 +1,6 @@
 //! Native JSON tools registry and executor.
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -50,7 +45,9 @@ impl Registry {
         if let Ok(rd) = fs::read_dir(&dir) {
             for e in rd.filter_map(|e| e.ok()) {
                 let p = e.path();
-                if p.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+                if p.extension().and_then(|s| s.to_str()) != Some("json") {
+                    continue;
+                }
                 let text = fs::read_to_string(&p)
                     .with_context(|| format!("reading tool file: {}", p.display()))?;
                 let def: ToolDef = serde_json::from_str(&text)
@@ -96,10 +93,12 @@ impl Registry {
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
 
-        let mut child = cmd.spawn().with_context(|| format!(
-            "failed to spawn tool {} with program {}",
-            name, tool.exec.program
-        ))?;
+        let mut child = cmd.spawn().with_context(|| {
+            format!(
+                "failed to spawn tool {} with program {}",
+                name, tool.exec.program
+            )
+        })?;
 
         if tool.exec.stdin {
             if let Some(mut stdin) = child.stdin.take() {
@@ -119,7 +118,9 @@ impl Registry {
             body.push_str(&String::from_utf8_lossy(&out.stdout));
         }
         if !out.stderr.is_empty() {
-            if !body.is_empty() { body.push_str("\n"); }
+            if !body.is_empty() {
+                body.push_str("\n");
+            }
             body.push_str(&String::from_utf8_lossy(&out.stderr));
         }
         Ok(format!("Exit code: {}\n{}", code, body))

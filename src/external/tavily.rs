@@ -17,7 +17,9 @@ impl TavilyClient {
         let api_key = cfg
             .get("TVLY_API_KEY")
             .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| anyhow::anyhow!("Missing TVLY_API_KEY. Set it in env or ~/.config/sgpt_rs/.sgptrc"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Missing TVLY_API_KEY. Set it in env or ~/.config/sgpt_rs/.sgptrc")
+            })?;
 
         // Optional: allow override via TAVILY_API_BASE; default to official endpoint
         let base = cfg
@@ -34,7 +36,11 @@ impl TavilyClient {
             .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()?;
 
-        Ok(Self { client, base, api_key })
+        Ok(Self {
+            client,
+            base,
+            api_key,
+        })
     }
 
     pub async fn search(&self, query: &str) -> Result<Value> {
@@ -63,4 +69,3 @@ pub async fn search_with_config(cfg: &Config, query: &str) -> Result<Value> {
     let client = TavilyClient::from_config(cfg)?;
     client.search(query).await
 }
-

@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::io;
 
 use crate::tui::run_tui_repl;
+use crate::process::InterpreterType;
 
 /// Run REPL mode with TUI interface
 pub async fn run(
@@ -17,12 +18,17 @@ pub async fn run(
     is_shell: bool,
     allow_interaction: bool,
     role_name: Option<&str>,
+    interpreter: Option<InterpreterType>,
 ) -> Result<()> {
     // Check if TUI mode is available
     if !io::IsTerminal::is_terminal(&io::stdout()) {
-        eprintln!("Warning: TUI mode not available in this environment. REPL requires a proper terminal.");
+        eprintln!(
+            "Warning: TUI mode not available in this environment. REPL requires a proper terminal."
+        );
         eprintln!("Try running in a terminal instead of an IDE or redirected output.");
-        return Err(anyhow::anyhow!("TUI mode requires a proper terminal environment"));
+        return Err(anyhow::anyhow!(
+            "TUI mode requires a proper terminal environment"
+        ));
     }
 
     run_tui_repl(
@@ -36,5 +42,7 @@ pub async fn run(
         is_shell,
         allow_interaction,
         role_name,
-    ).await
+        interpreter,
+    )
+    .await
 }

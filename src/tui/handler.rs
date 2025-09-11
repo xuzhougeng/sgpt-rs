@@ -3,25 +3,29 @@
 use std::io;
 use std::time::Duration;
 
-
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use crossterm::ExecutableCommand;
 use futures_util::StreamExt;
 use ratatui::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::{
-    cache::ChatSession,
-    config::Config,
-    llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
-};
 use super::{
     app::{App, InputMode},
     events::TuiEvent,
     ui::render_ui,
 };
+use crate::{
+    cache::ChatSession,
+    config::Config,
+    llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
+};
+use crate::process::{self, InterpreterType};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use crate::execution::ExecutionResult as CodeExecResult;
 
 /// Run the TUI-based REPL
 pub async fn run_tui_repl(
@@ -35,16 +39,20 @@ pub async fn run_tui_repl(
     is_shell: bool,
     allow_interaction: bool,
     role_name: Option<&str>,
+    interpreter: Option<InterpreterType>,
 ) -> Result<()> {
     // Check if we're in a proper terminal environment
     if !io::IsTerminal::is_terminal(&io::stdout()) {
-        return Err(anyhow::anyhow!("TUI mode requires a proper terminal environment"));
+        return Err(anyhow::anyhow!(
+            "TUI mode requires a proper terminal environment"
+        ));
     }
 
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     stdout.execute(EnterAlternateScreen)?;
+    stdout.execute(crossterm::event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -82,6 +90,7 @@ pub async fn run_tui_repl(
         is_shell,
         allow_interaction,
         model.to_string(),
+        interpreter,
     );
 
     // Create event channels
@@ -99,10 +108,22 @@ pub async fn run_tui_repl(
     }
 
     // Main event loop
-    let result = run_app(&mut terminal, &mut app, client, session, event_tx, event_rx, temperature, top_p, max_tokens).await;
+    let result = run_app(
+        &mut terminal,
+        &mut app,
+        client,
+        session,
+        event_tx,
+        event_rx,
+        temperature,
+        top_p,
+        max_tokens,
+    )
+    .await;
 
     // Restore terminal
     disable_raw_mode()?;
+    terminal.backend_mut().execute(crossterm::event::DisableMouseCapture)?;
     terminal.backend_mut().execute(LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
@@ -121,16 +142,163 @@ async fn run_app(
     top_p: f32,
     max_tokens: Option<u32>,
 ) -> Result<()> {
+    // Optional: initialize interpreter session (Python MVP)
+    let mut py_stdin_opt: Option<tokio::process::ChildStdin> = None;
+    let mut _py_child_opt: Option<tokio::process::Child> = None;
+    if matches!(app.interpreter, Some(InterpreterType::Python)) {
+        // Python bootstrap script for NDJSON loop
+        let bootstrap = r#"
+import sys, json, io, traceback, contextlib
+user_globals = {}
+orig_stdout = sys.stdout
+orig_stderr = sys.stderr
+
+def summarize_vars(g):
+    summary = {}
+    for k, v in g.items():
+        if k.startswith('_'):
+            continue
+        tname = type(v).__name__
+        info = tname
+        try:
+            if tname == 'DataFrame':
+                try:
+                    info = f'DataFrame({v.shape[0]}x{v.shape[1]})'
+                except Exception:
+                    info = 'DataFrame'
+            elif hasattr(v, 'shape'):
+                try:
+                    info = f'array{tuple(v.shape)}'
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        summary[k] = info
+    return summary
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        req = json.loads(line)
+    except Exception as e:
+        print(json.dumps({"id": None, "error": {"message": "invalid_json", "detail": str(e)}}), file=orig_stdout, flush=True)
+        continue
+    rid = req.get('id')
+    method = req.get('method')
+    params = req.get('params', {})
+    if method == 'execute':
+        code = params.get('code', '')
+        capture_output = params.get('capture_output', True)
+        out = io.StringIO()
+        errors = []
+        success = True
+        try:
+            if capture_output:
+                with contextlib.redirect_stdout(out):
+                    with contextlib.redirect_stderr(out):
+                        exec(code, user_globals)
+            else:
+                exec(code, user_globals)
+        except Exception as e:
+            success = False
+            tb = traceback.format_exc()
+            errors.append(tb)
+        output = out.getvalue() if capture_output else ''
+        vars_summary = summarize_vars(user_globals)
+        resp = {"id": rid, "result": {"success": success, "output": output, "errors": errors, "variables": vars_summary, "plots": []}}
+        print(json.dumps(resp), file=orig_stdout, flush=True)
+    elif method == 'vars':
+        vars_summary = summarize_vars(user_globals)
+        resp = {"id": rid, "result": {"success": True, "output": "", "errors": [], "variables": vars_summary, "plots": []}}
+        print(json.dumps(resp), file=orig_stdout, flush=True)
+    elif method == 'ping':
+        print(json.dumps({"id": rid, "result": "pong"}), file=orig_stdout, flush=True)
+    else:
+        print(json.dumps({"id": rid, "error": {"message": "unknown_method"}}), file=orig_stdout, flush=True)
+"#;
+
+        let handle = process::python::start_python(bootstrap).await?;
+        let child = handle.child;
+        let py_stdin = handle.stdin;
+        let stdout = handle.stdout;
+
+        // Spawn reader task for NDJSON responses
+        let mut reader = BufReader::new(stdout);
+        let tx = event_tx.clone();
+        tokio::spawn(async move {
+            let mut line = String::new();
+            loop {
+                line.clear();
+                let n = match reader.read_line(&mut line).await { Ok(n) => n, Err(_) => break };
+                if n == 0 { break; }
+                let trimmed = line.trim();
+                if trimmed.is_empty() { continue; }
+                let parsed: serde_json::Value = match serde_json::from_str(trimmed) { Ok(v) => v, Err(_) => continue };
+                let id_str = parsed.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let res = if let Some(obj) = parsed.get("result") {
+                    let success = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let output = obj.get("output").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let errors_vec = obj.get("errors").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let mut errors = Vec::new();
+                    for e in errors_vec { if let Some(s) = e.as_str() { errors.push(s.to_string()); } }
+                    let mut variables = std::collections::HashMap::new();
+                    if let Some(vars_obj) = obj.get("variables").and_then(|v| v.as_object()) {
+                        for (k, v) in vars_obj {
+                            if let Some(s) = v.as_str() { variables.insert(k.clone(), s.to_string()); }
+                        }
+                    }
+                    let plots = Vec::new();
+                    CodeExecResult { success, output, errors, variables, plots }
+                } else if let Some(err) = parsed.get("error") {
+                    let msg = err.get("message").and_then(|v| v.as_str()).unwrap_or("error");
+                    CodeExecResult { success: false, output: String::new(), errors: vec![msg.to_string()], variables: Default::default(), plots: vec![] }
+                } else {
+                    CodeExecResult { success: false, output: String::new(), errors: vec!["invalid_response".to_string()], variables: Default::default(), plots: vec![] }
+                };
+                if id_str.starts_with("vars-") {
+                    // Format variables snapshot
+                    let mut text = String::from("Variables:\n");
+                    if res.variables.is_empty() {
+                        text.push_str("(none)\n");
+                    } else {
+                        let mut keys: Vec<_> = res.variables.keys().cloned().collect();
+                        keys.sort();
+                        for k in keys {
+                            if let Some(v) = res.variables.get(&k) {
+                                text.push_str(&format!("- {}: {}\n", k, v));
+                            }
+                        }
+                    }
+                    let _ = tx.send(TuiEvent::VariablesSnapshot(text));
+                } else {
+                    let _ = tx.send(TuiEvent::CodeExecutionResult(res));
+                }
+            }
+        });
+
+        py_stdin_opt = Some(py_stdin);
+        _py_child_opt = Some(child);
+    }
+    let mut req_counter: u64 = 1;
     // Spawn input handler
     let input_tx = event_tx.clone();
     tokio::task::spawn_blocking(move || {
         loop {
             // Poll for keyboard events
             if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                if let Ok(Event::Key(key)) = event::read() {
-                    if let Err(_) = input_tx.send(TuiEvent::Key(key)) {
-                        break; // Channel closed
+                match event::read() {
+                    Ok(Event::Key(key)) => {
+                        if let Err(_) = input_tx.send(TuiEvent::Key(key)) { break; }
                     }
+                    Ok(Event::Mouse(m)) => {
+                        if let Err(_) = input_tx.send(TuiEvent::Mouse(m)) { break; }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -148,17 +316,44 @@ async fn run_app(
                         break; // Quit requested
                     }
                 }
+                TuiEvent::Mouse(m) => {
+                    match m.kind {
+                        MouseEventKind::ScrollUp => app.scroll_up(),
+                        MouseEventKind::ScrollDown => app.scroll_down(),
+                        _ => {}
+                    }
+                }
                 TuiEvent::UserInput(input) => {
                     // Check if we should queue the message
                     if !app.try_queue_message(input.clone()) {
-                        // Not queued, process immediately
-                        handle_user_input(app, input, &client, &session, event_tx.clone(), temperature, top_p, max_tokens).await?;
+                        // In interpreter mode, first generate code via LLM, then confirm/execute
+                        handle_user_input(
+                            app,
+                            input,
+                            &client,
+                            &session,
+                            event_tx.clone(),
+                            temperature,
+                            top_p,
+                            max_tokens,
+                        )
+                        .await?;
                     }
                 }
                 TuiEvent::ProcessNextMessage => {
                     // Process next message from queue
                     if let Some(next_message) = app.dequeue_message() {
-                        handle_user_input(app, next_message, &client, &session, event_tx.clone(), temperature, top_p, max_tokens).await?;
+                        handle_user_input(
+                            app,
+                            next_message,
+                            &client,
+                            &session,
+                            event_tx.clone(),
+                            temperature,
+                            top_p,
+                            max_tokens,
+                        )
+                        .await?;
                     }
                 }
                 TuiEvent::LlmStream(stream_event) => {
@@ -171,9 +366,9 @@ async fn run_app(
                     let tx = event_tx.clone();
                     tokio::task::spawn_blocking(move || {
                         let output = execute_command_with_output(&cmd_clone);
-                        let _ = tx.send(TuiEvent::ExecutionResult { 
-                            command: cmd_clone, 
-                            output 
+                        let _ = tx.send(TuiEvent::ExecutionResult {
+                            command: cmd_clone,
+                            output,
                         });
                     });
                 }
@@ -191,6 +386,49 @@ async fn run_app(
                     };
                     app.show_description(cmd, description);
                 }
+                TuiEvent::ExecuteCode { language, code } => {
+                    match language {
+                        InterpreterType::Python => {
+                            if let Some(stdin) = py_stdin_opt.as_mut() {
+                                let id = { let cur = req_counter; req_counter = req_counter.wrapping_add(1); format!("req-{}", cur) };
+                                let code = sanitize_generated_code(&code);
+                                let req = serde_json::json!({
+                                    "id": id,
+                                    "method": "execute",
+                                    "params": {"code": code, "capture_output": true}
+                                });
+                                let _ = stdin.write_all((serde_json::to_string(&req).unwrap() + "\n").as_bytes()).await;
+                            } else {
+                                app.add_message(ChatMessage { role: Role::Assistant, content: "Interpreter not initialized".to_string(), name: None, tool_calls: None });
+                            }
+                        }
+                        InterpreterType::R => {
+                            app.add_message(ChatMessage { role: Role::Assistant, content: "R interpreter is not yet implemented".to_string(), name: None, tool_calls: None });
+                        }
+                    }
+                }
+                TuiEvent::ShowVariables => {
+                    if matches!(app.interpreter, Some(InterpreterType::Python)) {
+                        if let Some(stdin) = py_stdin_opt.as_mut() {
+                            let id = { let cur = req_counter; req_counter = req_counter.wrapping_add(1); format!("vars-{}", cur) };
+                            let req = serde_json::json!({ "id": id, "method": "vars", "params": {} });
+                            let _ = stdin.write_all((serde_json::to_string(&req).unwrap() + "\n").as_bytes()).await;
+                        }
+                    }
+                }
+                TuiEvent::CodeExecutionResult(res) => {
+                    let mut text = String::new();
+                    if !res.output.is_empty() { text.push_str(&res.output); }
+                    if !res.errors.is_empty() {
+                        if !text.is_empty() { text.push_str("\n"); }
+                        text.push_str(&res.errors.join("\n"));
+                    }
+                    if text.is_empty() && res.success { text = "(ok)".to_string(); }
+                    app.add_message(ChatMessage { role: Role::Assistant, content: text, name: None, tool_calls: None });
+                }
+                TuiEvent::VariablesSnapshot(text) => {
+                    app.add_message(ChatMessage { role: Role::Assistant, content: text, name: None, tool_calls: None });
+                }
                 _ => {} // Handle other events as needed
             }
         }
@@ -199,6 +437,8 @@ async fn run_app(
         tokio::time::sleep(Duration::from_millis(16)).await; // ~60 FPS
     }
 
+    // Attempt to terminate interpreter if running
+    if let Some(mut child) = _py_child_opt { let _ = child.kill().await; }
     Ok(())
 }
 
@@ -218,6 +458,11 @@ async fn handle_key_event(
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return Ok(true); // Quit
         }
+        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if app.interpreter.is_some() {
+                let _ = event_tx.send(TuiEvent::ShowVariables);
+            }
+        }
         KeyCode::F(1) => {
             app.toggle_help();
         }
@@ -229,12 +474,12 @@ async fn handle_key_event(
         }
         KeyCode::Enter => {
             let input = app.get_input_text();
-            
+
             // Handle special inputs
             if input.trim() == "exit()" {
                 return Ok(true);
             }
-            
+
             // Handle multiline mode
             if input.trim() == "\"\"\"" {
                 match app.input_mode {
@@ -254,11 +499,16 @@ async fn handle_key_event(
                 app.multiline_buffer.push(app.input.clone());
                 app.input.clear();
             } else {
-                // Handle shell shortcuts
-                if app.is_shell_mode && app.allow_interaction {
+                // Handle shell/interpreter shortcuts
+                if (app.is_shell_mode && app.allow_interaction) || app.interpreter.is_some() {
                     match input.trim() {
                         "e" | "r" if !app.last_command.is_empty() => {
-                            let _ = event_tx.send(TuiEvent::ExecuteCommand(app.last_command.clone()));
+                            if app.interpreter.is_some() {
+                                let lang = app.interpreter.unwrap();
+                                let _ = event_tx.send(TuiEvent::ExecuteCode { language: lang, code: app.last_command.clone() });
+                            } else {
+                                let _ = event_tx.send(TuiEvent::ExecuteCommand(app.last_command.clone()));
+                            }
                             app.clear_input();
                             return Ok(false);
                         }
@@ -270,7 +520,7 @@ async fn handle_key_event(
                         _ => {}
                     }
                 }
-                
+
                 // Send regular input
                 if !input.trim().is_empty() {
                     let _ = event_tx.send(TuiEvent::UserInput(input));
@@ -286,7 +536,7 @@ async fn handle_key_event(
         }
         _ => {}
     }
-    
+
     Ok(false)
 }
 
@@ -295,7 +545,7 @@ async fn handle_user_input(
     app: &mut App,
     input: String,
     client: &LlmClient,
-    session: &ChatSession,
+    _session: &ChatSession,
     event_tx: mpsc::UnboundedSender<TuiEvent>,
     temperature: f32,
     top_p: f32,
@@ -317,7 +567,16 @@ async fn handle_user_input(
     app.start_response();
 
     // Prepare messages for LLM
-    let messages = app.messages.clone();
+    // If in interpreter mode, inject a system message to produce code only
+    let mut messages: Vec<ChatMessage> = Vec::new();
+    if let Some(lang) = app.interpreter {
+        let content = match lang {
+            InterpreterType::Python => "You are a Python code generator. Given the user's request, produce ONLY executable Python code without explanations, comments, or Markdown fences. Avoid triple backticks.",
+            InterpreterType::R => "You are an R code generator. Given the user's request, produce ONLY executable R code without explanations, comments, or Markdown fences. Avoid triple backticks.",
+        };
+        messages.push(ChatMessage { role: Role::System, content: content.to_string(), name: None, tool_calls: None });
+    }
+    messages.extend(app.messages.clone());
     let opts = ChatOptions {
         model: app.model.clone(),
         temperature,
@@ -362,16 +621,17 @@ async fn handle_llm_stream_event(
     match event {
         StreamEvent::Content(content) => {
             app.append_response(&content);
-            app.scroll_to_bottom(); // Auto-scroll to follow new content
+            // Always auto-scroll to show new content when streaming
+            app.scroll_to_bottom();
         }
         StreamEvent::Done => {
             app.finish_response()?;
-            
+
             // Save session if not temporary
             if app.chat_id != "temp" && !app.messages.is_empty() {
                 session.write(&app.chat_id, app.messages.clone())?;
             }
-            
+
             // Process next message from queue if available
             let _ = event_tx.send(TuiEvent::ProcessNextMessage);
         }
@@ -382,14 +642,14 @@ async fn handle_llm_stream_event(
             // Handle tool call completion
         }
     }
-    
+
     Ok(())
 }
 
 /// Execute a command and capture its output
 fn execute_command_with_output(command: &str) -> String {
     use std::process::{Command, Stdio};
-    
+
     // Determine shell based on platform
     let (shell_cmd, shell_arg) = if cfg!(target_os = "windows") {
         ("cmd", "/C")
@@ -407,7 +667,7 @@ fn execute_command_with_output(command: &str) -> String {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            
+
             if output.status.success() {
                 if stdout.is_empty() && stderr.is_empty() {
                     "Command executed successfully (no output)".to_string()
@@ -417,8 +677,12 @@ fn execute_command_with_output(command: &str) -> String {
                     format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
                 }
             } else {
-                format!("Command failed with exit code: {}\n\nSTDOUT:\n{}\n\nSTDERR:\n{}", 
-                       output.status.code().unwrap_or(-1), stdout, stderr)
+                format!(
+                    "Command failed with exit code: {}\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                    output.status.code().unwrap_or(-1),
+                    stdout,
+                    stderr
+                )
             }
         }
         Err(e) => {
@@ -427,10 +691,34 @@ fn execute_command_with_output(command: &str) -> String {
     }
 }
 
+/// Sanitize generated code by stripping common Markdown code fences
+fn sanitize_generated_code(s: &str) -> String {
+    let trimmed = s.trim();
+    // If contains triple backticks, attempt to extract the first fenced block
+    if trimmed.starts_with("```") {
+        let mut lines = trimmed.lines();
+        // Skip first fence line (possibly ```python)
+        let _ = lines.next();
+        let mut buf = String::new();
+        for line in lines {
+            if line.starts_with("```") { break; }
+            buf.push_str(line);
+            buf.push('\n');
+        }
+        return buf;
+    }
+    // Also handle indented or leading language lines
+    if trimmed.starts_with("# %%") {
+        // Simple noop for now
+        return trimmed.to_string();
+    }
+    trimmed.to_string()
+}
+
 /// Generate fake command descriptions for testing
 fn generate_fake_command_description(command: &str) -> String {
     let cmd_lower = command.to_lowercase();
-    
+
     let description = if cmd_lower.starts_with("ls") {
         "List directory contents. Shows files and directories in the current or specified directory.\n\nCommon options:\n-l: Long format with details\n-a: Show hidden files\n-h: Human readable file sizes"
     } else if cmd_lower.starts_with("git") {

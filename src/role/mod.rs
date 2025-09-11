@@ -56,9 +56,13 @@ pub fn default_role_text(cfg: &Config, role: DefaultRole) -> String {
 
 fn chain_hint(shell: &str) -> String {
     let sh = shell.to_ascii_lowercase();
-    if sh.contains("powershell") { "If multiple steps are required, separate commands with ; (not &&).".into() }
-    else if sh.contains("cmd") { "If multiple steps are required, combine commands with &&.".into() }
-    else { "If multiple steps are required, combine commands with &&.".into() }
+    if sh.contains("powershell") {
+        "If multiple steps are required, separate commands with ; (not &&).".into()
+    } else if sh.contains("cmd") {
+        "If multiple steps are required, combine commands with &&.".into()
+    } else {
+        "If multiple steps are required, combine commands with &&.".into()
+    }
 }
 
 fn platform_hint(shell: &str) -> String {
@@ -67,15 +71,18 @@ fn platform_hint(shell: &str) -> String {
         "Prefer native PowerShell cmdlets and parameters (e.g., Get-ChildItem, Select-String) rather than Unix commands."
             .into()
     } else if sh.contains("cmd") {
-        "Prefer built-in Windows commands (e.g., dir, findstr) where appropriate."
-            .into()
+        "Prefer built-in Windows commands (e.g., dir, findstr) where appropriate.".into()
     } else {
         String::new()
     }
 }
 
 fn detect_os(cfg: &Config) -> String {
-    if let Some(v) = cfg.get("OS_NAME") { if v != "auto" { return v; } }
+    if let Some(v) = cfg.get("OS_NAME") {
+        if v != "auto" {
+            return v;
+        }
+    }
     match std::env::consts::OS {
         "linux" => "Linux".to_string(),
         "macos" => "Darwin/MacOS".to_string(),
@@ -85,11 +92,19 @@ fn detect_os(cfg: &Config) -> String {
 }
 
 fn detect_shell(cfg: &Config) -> String {
-    if let Some(v) = cfg.get("SHELL_NAME") { if v != "auto" { return v; } }
+    if let Some(v) = cfg.get("SHELL_NAME") {
+        if v != "auto" {
+            return v;
+        }
+    }
     if cfg!(windows) {
         let ps = std::env::var("PSModulePath").unwrap_or_default();
         let is_powershell = ps.split(std::path::MAIN_SEPARATOR).count() >= 3;
-        return if is_powershell { "powershell.exe".into() } else { "cmd.exe".into() };
+        return if is_powershell {
+            "powershell.exe".into()
+        } else {
+            "cmd.exe".into()
+        };
     }
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
     Path::new(&shell)
@@ -107,22 +122,42 @@ pub struct SystemRole {
 }
 
 impl SystemRole {
-    fn storage_dir(cfg: &Config) -> PathBuf { cfg.roles_path() }
+    fn storage_dir(cfg: &Config) -> PathBuf {
+        cfg.roles_path()
+    }
 
     pub fn create_defaults(cfg: &Config) -> Result<()> {
         let dir = Self::storage_dir(cfg);
         fs::create_dir_all(&dir)?;
         let (os, shell) = (detect_os(cfg), detect_shell(cfg));
         let defaults = vec![
-            ("ShellGPT", default_role_text(cfg, DefaultRole::Default).replace("{os}", &os).replace("{shell}", &shell)),
-            ("Shell Command Generator", default_role_text(cfg, DefaultRole::Shell).replace("{os}", &os).replace("{shell}", &shell)),
-            ("Shell Command Descriptor", default_role_text(cfg, DefaultRole::DescribeShell)),
+            (
+                "ShellGPT",
+                default_role_text(cfg, DefaultRole::Default)
+                    .replace("{os}", &os)
+                    .replace("{shell}", &shell),
+            ),
+            (
+                "Shell Command Generator",
+                default_role_text(cfg, DefaultRole::Shell)
+                    .replace("{os}", &os)
+                    .replace("{shell}", &shell),
+            ),
+            (
+                "Shell Command Descriptor",
+                default_role_text(cfg, DefaultRole::DescribeShell),
+            ),
             ("Code Generator", default_role_text(cfg, DefaultRole::Code)),
         ];
         for (name, body) in defaults {
             let rp = dir.join(format!("{}.json", name));
-            if rp.exists() { continue; }
-            let sr = SystemRole { name: name.to_string(), role: format!("You are {}\n{}", name, body) };
+            if rp.exists() {
+                continue;
+            }
+            let sr = SystemRole {
+                name: name.to_string(),
+                role: format!("You are {}\n{}", name, body),
+            };
             fs::write(rp, serde_json::to_string(&sr)?)?;
         }
         Ok(())
@@ -134,18 +169,24 @@ impl SystemRole {
             let mut files: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
             files.sort_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok());
             files
-        } else { Vec::new() }
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn get(cfg: &Config, name: &str) -> Result<SystemRole> {
         let rp = Self::storage_dir(cfg).join(format!("{}.json", name));
-        if !rp.exists() { return Err(anyhow!("role not found: {}", name)); }
+        if !rp.exists() {
+            return Err(anyhow!("role not found: {}", name));
+        }
         let text = fs::read_to_string(rp)?;
         let sr: SystemRole = serde_json::from_str(&text)?;
         Ok(sr)
     }
 
-    pub fn show(cfg: &Config, name: &str) -> Result<String> { Ok(Self::get(cfg, name)?.role) }
+    pub fn show(cfg: &Config, name: &str) -> Result<String> {
+        Ok(Self::get(cfg, name)?.role)
+    }
 
     pub fn create_interactive(cfg: &Config, name: &str) -> Result<()> {
         let dir = Self::storage_dir(cfg);
@@ -154,12 +195,20 @@ impl SystemRole {
         if rp.exists() {
             // Overwrite without confirmation to keep it simple
         }
-        eprintln!("Enter role description for \"{}\". Press Ctrl+D when done:\n", name);
+        eprintln!(
+            "Enter role description for \"{}\". Press Ctrl+D when done:\n",
+            name
+        );
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;
-        if buf.trim().is_empty() { return Err(anyhow!("empty role description")); }
+        if buf.trim().is_empty() {
+            return Err(anyhow!("empty role description"));
+        }
         let content = format!("You are {}\n{}", name, buf.trim());
-        let sr = SystemRole { name: name.to_string(), role: content };
+        let sr = SystemRole {
+            name: name.to_string(),
+            role: content,
+        };
         let data = serde_json::to_string(&sr)?;
         let mut f = fs::File::create(rp)?;
         f.write_all(data.as_bytes())?;
@@ -169,7 +218,9 @@ impl SystemRole {
 
 pub fn resolve_role_text(cfg: &Config, user_role: Option<&str>, fallback: DefaultRole) -> String {
     if let Some(name) = user_role {
-        if let Ok(sr) = SystemRole::get(cfg, name) { return sr.role; }
+        if let Ok(sr) = SystemRole::get(cfg, name) {
+            return sr.role;
+        }
     }
     let (os, shell) = (detect_os(cfg), detect_shell(cfg));
     default_role_text(cfg, fallback)

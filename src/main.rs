@@ -1,15 +1,17 @@
-mod cli;
-mod handlers;
-mod role;
-mod printer;
-mod config;
 mod cache;
+mod cli;
+mod config;
+mod execution;
+mod external;
 mod functions;
-mod utils;
+mod handlers;
 mod integration;
 mod llm;
-mod external;
+mod printer;
+mod process;
+mod role;
 mod tui;
+mod utils;
 
 use anyhow::{anyhow, bail, Result};
 use config::Config;
@@ -81,14 +83,25 @@ async fn main() -> Result<()> {
     }
 
     // Compute markdown preference early for show_chat
-    let md_for_show = if args.no_md { false } else if args.md { true } else { cfg.get_bool("PRETTIFY_MARKDOWN") };
+    let md_for_show = if args.no_md {
+        false
+    } else if args.md {
+        true
+    } else {
+        cfg.get_bool("PRETTIFY_MARKDOWN")
+    };
 
     // Role management shortcuts
     if args.list_roles {
-        for p in SystemRole::list(&cfg) { println!("{}", p.display()); }
+        for p in SystemRole::list(&cfg) {
+            println!("{}", p.display());
+        }
         return Ok(());
     }
-    if let Some(name) = &args.show_role { println!("{}", SystemRole::show(&cfg, name)?); return Ok(()); }
+    if let Some(name) = &args.show_role {
+        println!("{}", SystemRole::show(&cfg, name)?);
+        return Ok(());
+    }
     if let Some(name) = &args.create_role {
         SystemRole::create_interactive(&cfg, name)?;
         println!("Created/updated role: {}", name);
@@ -97,17 +110,25 @@ async fn main() -> Result<()> {
 
     // Show/list chat shortcuts
     if let Some(id) = &args.show_chat {
-        use owo_colors::OwoColorize;
         use crate::printer::MarkdownPrinter;
+        use owo_colors::OwoColorize;
         let session = cache::ChatSession::from_config(&cfg);
         if !session.exists(id) {
-            bail!("chat not found: {}", cfg.chat_cache_path().join(id).display());
+            bail!(
+                "chat not found: {}",
+                cfg.chat_cache_path().join(id).display()
+            );
         }
         let messages = session.read(id)?;
         if md_for_show {
             let mut md_text = String::new();
             for m in messages {
-                let role = match m.role { llm::Role::System => "system", llm::Role::User => "user", llm::Role::Assistant => "assistant", llm::Role::Tool => "tool" };
+                let role = match m.role {
+                    llm::Role::System => "system",
+                    llm::Role::User => "user",
+                    llm::Role::Assistant => "assistant",
+                    llm::Role::Tool => "tool",
+                };
                 md_text.push_str(&format!("### {}\n\n{}\n\n", role, m.content));
             }
             MarkdownPrinter::default().print(&md_text);
@@ -133,7 +154,9 @@ async fn main() -> Result<()> {
     }
     if args.list_chats {
         let session = cache::ChatSession::from_config(&cfg);
-        for p in session.list() { println!("{}", p.display()); }
+        for p in session.list() {
+            println!("{}", p.display());
+        }
         return Ok(());
     }
 
@@ -167,7 +190,10 @@ async fn main() -> Result<()> {
 
     let role = DefaultRole::from_flags(args.shell, args.describe_shell, args.code);
     // Force md off for shell/code/describe; and disable functions in those modes
-    if matches!(role, DefaultRole::Shell | DefaultRole::Code | DefaultRole::DescribeShell) {
+    if matches!(
+        role,
+        DefaultRole::Shell | DefaultRole::Code | DefaultRole::DescribeShell
+    ) {
         md = false;
         functions = false;
     }
@@ -187,19 +213,47 @@ async fn main() -> Result<()> {
 
     // Route to handler
     match (args.repl.as_deref(), args.chat.as_deref()) {
-        (Some(repl_id), None) => handlers::repl::run(
-            repl_id,
-            if prompt.is_empty() { None } else { Some(prompt.as_str()) },
-            &effective_model,
-            args.temperature,
-            args.top_p,
-            args.max_tokens,
-            md_for_show,
-            args.shell,
-            interaction,
-            args.role.as_deref(),
-        ).await,
-        (None, Some(chat_id)) => handlers::chat::run(chat_id, prompt.as_str(), &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md_for_show, functions, args.role.as_deref()).await,
+        (Some(repl_id), None) => {
+            handlers::repl::run(
+                repl_id,
+                if prompt.is_empty() {
+                    None
+                } else {
+                    Some(prompt.as_str())
+                },
+                &effective_model,
+                args.temperature,
+                args.top_p,
+                args.max_tokens,
+                md_for_show,
+                args.shell,
+                interaction,
+                args.role.as_deref(),
+                if args.python {
+                    Some(process::InterpreterType::Python)
+                } else if args.r {
+                    Some(process::InterpreterType::R)
+                } else {
+                    None
+                },
+            )
+            .await
+        }
+        (None, Some(chat_id)) => {
+            handlers::chat::run(
+                chat_id,
+                prompt.as_str(),
+                &effective_model,
+                args.temperature,
+                args.top_p,
+                args.max_tokens,
+                cache,
+                md_for_show,
+                functions,
+                args.role.as_deref(),
+            )
+            .await
+        }
         (None, None) => {
             if args.search {
                 if prompt.trim().is_empty() {
@@ -211,11 +265,18 @@ async fn main() -> Result<()> {
                     for (i, item) in results.iter().enumerate() {
                         let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
                         let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                        let snippet = item.get("snippet").or_else(|| item.get("content")).and_then(|v| v.as_str()).unwrap_or("");
+                        let snippet = item
+                            .get("snippet")
+                            .or_else(|| item.get("content"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         println!("{}. {}\n{}\n{}\n", i + 1, title, url, snippet);
                     }
                 } else {
-                    println!("{}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()));
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string())
+                    );
                 }
                 Ok(())
             } else if args.enhanced_search {
@@ -229,18 +290,53 @@ async fn main() -> Result<()> {
                     Some(args.top_p),
                     &cfg,
                     md_for_show,
-                ).await
-            } else
-            if args.shell {
+                )
+                .await
+            } else if args.shell {
                 let no_interact = !interaction || !stdin_is_tty;
                 let explicit_no_interact = args.no_interaction; // only auto-exec when user explicitly passed --no-interaction
-                handlers::shell::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, no_interact, explicit_no_interact).await
+                handlers::shell::run(
+                    &prompt,
+                    &effective_model,
+                    args.temperature,
+                    args.top_p,
+                    args.max_tokens,
+                    no_interact,
+                    explicit_no_interact,
+                )
+                .await
             } else if args.describe_shell {
-                handlers::describe::run(&prompt, &effective_model, args.temperature, args.top_p, md, args.max_tokens).await
+                handlers::describe::run(
+                    &prompt,
+                    &effective_model,
+                    args.temperature,
+                    args.top_p,
+                    md,
+                    args.max_tokens,
+                )
+                .await
             } else if args.code {
-                handlers::code::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens).await
+                handlers::code::run(
+                    &prompt,
+                    &effective_model,
+                    args.temperature,
+                    args.top_p,
+                    args.max_tokens,
+                )
+                .await
             } else {
-                handlers::default::run(&prompt, &effective_model, args.temperature, args.top_p, args.max_tokens, cache, md, functions, args.role.as_deref()).await
+                handlers::default::run(
+                    &prompt,
+                    &effective_model,
+                    args.temperature,
+                    args.top_p,
+                    args.max_tokens,
+                    cache,
+                    md,
+                    functions,
+                    args.role.as_deref(),
+                )
+                .await
             }
         }
         _ => Err(anyhow!("--chat and --repl cannot be used together")),

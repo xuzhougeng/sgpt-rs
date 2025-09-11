@@ -13,30 +13,30 @@ use pdf_extract::extract_text;
 use std::process::{Command, Stdio};
 
 /// Extract text content from a PDF file.
-/// 
+///
 /// Uses the pdf-extract crate to parse PDF files and extract readable text content.
 /// This function handles various PDF encodings and font mappings, though some
 /// complex PDFs might produce warnings about missing glyphs or characters.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_path` - Path to the PDF file
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<String>` - Extracted text content, or error if extraction fails
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```rust
 /// use crate::utils::pdf::extract_pdf_text;
-/// 
+///
 /// let content = extract_pdf_text("document.pdf")?;
 /// println!("PDF contains {} characters", content.len());
 /// ```
-/// 
+///
 /// # Notes
-/// 
+///
 /// - The extraction process may produce stderr warnings about font encoding issues
 /// - These warnings are normal for complex PDFs and don't affect the extraction
 /// - Empty or corrupted PDFs will return an error
@@ -48,7 +48,8 @@ pub fn extract_pdf_text(file_path: &str) -> Result<String> {
     // - Output to stdout ("-") so we can capture it and format.
     if let Ok(output) = Command::new("pdftotext")
         .arg("-q")
-        .arg("-enc").arg("UTF-8")
+        .arg("-enc")
+        .arg("UTF-8")
         .arg("-layout")
         .arg(file_path)
         .arg("-")
@@ -74,7 +75,8 @@ pub fn extract_pdf_text(file_path: &str) -> Result<String> {
 /// Page boundaries are detected via form feed (\x0C) if present; otherwise the
 /// entire document is treated as a single page.
 fn format_pages_and_lines(raw: &str) -> String {
-    let pages: Vec<&str> = if raw.contains('\u{000C}') { // form feed
+    let pages: Vec<&str> = if raw.contains('\u{000C}') {
+        // form feed
         raw.split('\u{000C}').collect()
     } else {
         vec![raw]
@@ -82,7 +84,9 @@ fn format_pages_and_lines(raw: &str) -> String {
 
     let mut out = String::new();
     for (pi, page) in pages.iter().enumerate() {
-        if pi > 0 { out.push('\n'); }
+        if pi > 0 {
+            out.push('\n');
+        }
         out.push_str(&format!("--page {}----\n", pi + 1));
         for (li, line) in page.lines().enumerate() {
             // Preserve leading spaces; trim only trailing newlines/spaces
@@ -144,22 +148,22 @@ where
 }
 
 /// Check if a file path has a PDF extension.
-/// 
+///
 /// Performs a case-insensitive check for the .pdf file extension.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_path` - Path to check
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `bool` - true if the file has a .pdf extension, false otherwise
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```rust
 /// use crate::utils::pdf::is_pdf_file;
-/// 
+///
 /// assert!(is_pdf_file("document.pdf"));
 /// assert!(is_pdf_file("Document.PDF"));
 /// assert!(!is_pdf_file("document.txt"));

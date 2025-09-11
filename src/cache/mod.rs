@@ -1,11 +1,11 @@
 //! Request cache (TBD) and chat session persistence.
 
-use std::{ fs, path::PathBuf };
+use std::{fs, path::PathBuf};
 
 use anyhow::Result;
 // serde traits not needed directly here; use serde_json helpers
 
-use crate::{ config::Config, llm::ChatMessage };
+use crate::{config::Config, llm::ChatMessage};
 
 #[derive(Debug, Clone)]
 pub struct ChatSession {
@@ -21,7 +21,10 @@ impl ChatSession {
             .unwrap_or(100);
         let path = cfg.chat_cache_path();
         let _ = fs::create_dir_all(&path);
-        Self { length: len, storage_path: path }
+        Self {
+            length: len,
+            storage_path: path,
+        }
     }
 
     fn file_path(&self, chat_id: &str) -> PathBuf {
@@ -67,7 +70,8 @@ impl ChatSession {
 
     pub fn list(&self) -> Vec<PathBuf> {
         if let Ok(read_dir) = fs::read_dir(&self.storage_path) {
-            let mut files: Vec<PathBuf> = read_dir.filter_map(|e| e.ok().map(|e| e.path())).collect();
+            let mut files: Vec<PathBuf> =
+                read_dir.filter_map(|e| e.ok().map(|e| e.path())).collect();
             files.sort_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok());
             files
         } else {
@@ -90,7 +94,10 @@ impl RequestCache {
             .unwrap_or(100);
         let path = cfg.cache_path();
         let _ = fs::create_dir_all(&path);
-        Self { length: len, cache_path: path }
+        Self {
+            length: len,
+            cache_path: path,
+        }
     }
 
     pub fn key_for(
@@ -126,7 +133,9 @@ impl RequestCache {
     }
 
     fn prune(&self) -> Result<()> {
-        let mut entries: Vec<_> = fs::read_dir(&self.cache_path)?.filter_map(|e| e.ok()).collect();
+        let mut entries: Vec<_> = fs::read_dir(&self.cache_path)?
+            .filter_map(|e| e.ok())
+            .collect();
         entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
         if entries.len() > self.length {
             let to_delete = entries.len() - self.length;

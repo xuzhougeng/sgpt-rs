@@ -8,10 +8,15 @@ pub struct MarkdownPrinter {
 
 impl Default for MarkdownPrinter {
     fn default() -> Self {
-        Self { skin: MadSkin::default() }
+        Self {
+            skin: MadSkin::default(),
+        }
     }
 }
 
 impl MarkdownPrinter {
-    pub fn print(&self, text: &str) { self.skin.print_text(text); println!(); }
+    pub fn print(&self, text: &str) {
+        self.skin.print_text(text);
+        println!();
+    }
 }

@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use crate::llm::{ChatMessage, Role};
+use crate::process::InterpreterType;
 
 /// Input mode for the TUI
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +22,10 @@ pub enum PopupState {
     /// Execution result popup
     ExecutionResult { command: String, output: String },
     /// Command description popup
-    Description { command: String, description: String },
+    Description {
+        command: String,
+        description: String,
+    },
 }
 
 /// Application state for the TUI
@@ -39,6 +43,8 @@ pub struct App {
     pub multiline_buffer: Vec<String>,
     /// Whether we're in shell mode
     pub is_shell_mode: bool,
+    /// Active interpreter (Python/R) if in analytics mode
+    pub interpreter: Option<InterpreterType>,
     /// Whether interaction is allowed in shell mode
     pub allow_interaction: bool,
     /// Last generated command (for shell mode)
@@ -71,8 +77,14 @@ impl App {
         is_shell_mode: bool,
         allow_interaction: bool,
         model: String,
+        interpreter: Option<InterpreterType>,
     ) -> Self {
-        let status_message = if is_shell_mode {
+        let status_message = if let Some(lang) = interpreter {
+            match lang {
+                InterpreterType::Python => "Python REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
+                InterpreterType::R => "R REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
+            }
+        } else if is_shell_mode {
             if allow_interaction {
                 "Shell REPL: e=execute, r=repeat, d=describe | Ctrl+C=quit, F1=help"
             } else {
@@ -80,7 +92,8 @@ impl App {
             }
         } else {
             "Chat Mode | Ctrl+C=quit, F1=help"
-        }.to_string();
+        }
+        .to_string();
 
         Self {
             chat_id,
@@ -89,6 +102,7 @@ impl App {
             input_mode: InputMode::Normal,
             multiline_buffer: Vec::new(),
             is_shell_mode,
+            interpreter,
             allow_interaction,
             last_command: String::new(),
             current_response: String::new(),
@@ -108,7 +122,8 @@ impl App {
         self.messages.push(message);
         // Keep only recent messages for display performance
         if self.messages.len() > self.max_display_messages {
-            self.messages.drain(0..self.messages.len() - self.max_display_messages);
+            self.messages
+                .drain(0..self.messages.len() - self.max_display_messages);
         }
         // Auto-scroll to bottom to show new message
         self.scroll_to_bottom();
@@ -143,12 +158,12 @@ impl App {
                 name: None,
                 tool_calls: None,
             });
-            
-            if self.is_shell_mode {
+
+            if self.is_shell_mode || self.interpreter.is_some() {
                 self.last_command = self.current_response.trim().to_string();
             }
         }
-        
+
         self.current_response.clear();
         self.is_receiving_response = false;
         self.update_status_message(); // Update status after finishing response
@@ -175,17 +190,55 @@ impl App {
         self.show_help = !self.show_help;
     }
 
-    /// Scroll chat history up (show older messages)
-    pub fn scroll_up(&mut self) {
-        let visible_count = self.visible_messages().len();
-        // Increase offset to show older messages
-        let max_scroll = visible_count.saturating_sub(1);
-        if self.chat_scroll_offset < max_scroll {
-            self.chat_scroll_offset += 1;
+    /// Calculate total number of display lines
+    pub fn calculate_total_lines(&self, available_width: usize) -> usize {
+        let mut total_lines = 0;
+        let visible_msgs = self.visible_messages();
+        
+        for msg in visible_msgs {
+            let prefix = match msg.role {
+                Role::User => ">>> ",
+                Role::Assistant => "",
+                Role::System => "SYS ",
+                Role::Tool => "TOOL ",
+            };
+            let content = format!("{}{}", prefix, msg.content);
+            
+            for line in content.lines() {
+                if line.len() <= available_width {
+                    total_lines += 1;
+                } else {
+                    total_lines += (line.len() + available_width - 1) / available_width; // Ceiling division
+                }
+            }
+            
+            if !content.is_empty() {
+                total_lines += 1; // Empty line between messages
+            }
         }
+        
+        // Add current response lines if streaming
+        if self.is_receiving_response && !self.current_response.is_empty() {
+            for line in self.current_response.lines() {
+                if line.len() <= available_width {
+                    total_lines += 1;
+                } else {
+                    total_lines += (line.len() + available_width - 1) / available_width;
+                }
+            }
+        }
+        
+        total_lines
     }
 
-    /// Scroll chat history down (show newer messages)
+    /// Scroll chat history up (show older messages) - now line-based
+    pub fn scroll_up(&mut self) {
+        // Scroll up by one line at a time, but we need terminal dimensions
+        // For now, increment by 1 and let the UI handle the actual calculation
+        self.chat_scroll_offset += 1;
+    }
+
+    /// Scroll chat history down (show newer messages) - now line-based
     pub fn scroll_down(&mut self) {
         // Decrease offset to show newer messages
         if self.chat_scroll_offset > 0 {
@@ -205,7 +258,10 @@ impl App {
 
     /// Show command description popup
     pub fn show_description(&mut self, command: String, description: String) {
-        self.popup_state = PopupState::Description { command, description };
+        self.popup_state = PopupState::Description {
+            command,
+            description,
+        };
     }
 
     /// Hide any popup
@@ -238,7 +294,12 @@ impl App {
 
     /// Update status message to show queue status
     fn update_status_message(&mut self) {
-        let base_message = if self.is_shell_mode {
+        let base_message = if let Some(lang) = self.interpreter {
+            match lang {
+                InterpreterType::Python => "Python REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
+                InterpreterType::R => "R REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
+            }
+        } else if self.is_shell_mode {
             if self.allow_interaction {
                 "Shell REPL: e=execute, r=repeat, d=describe | Ctrl+C=quit, F1=help"
             } else {

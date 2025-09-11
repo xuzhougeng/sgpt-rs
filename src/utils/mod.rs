@@ -1,5 +1,5 @@
 //! Utilities (shell command execution, document processing, etc.).
-//! 
+//!
 //! This module provides various utility functions organized into submodules:
 //! - `command`: Shell command execution across platforms
 //! - `document`: Document reading and processing for multiple file formats
@@ -12,4 +12,4 @@ pub mod pdf;
 
 // Re-export commonly used functions for backward compatibility
 pub use command::run_command;
-pub use document::{read_documents, combine_doc_and_prompt};
+pub use document::{combine_doc_and_prompt, read_documents};

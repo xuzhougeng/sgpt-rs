@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
-    env,
-    fs,
+    env, fs,
     io::{BufRead, BufReader},
     path::PathBuf,
 };
@@ -43,7 +42,10 @@ impl Config {
             }
         }
 
-        Self { inner: map, config_path }
+        Self {
+            inner: map,
+            config_path,
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
@@ -141,7 +143,10 @@ fn default_map() -> HashMap<String, String> {
         "CACHE_PATH".into(),
         temp.join("cache").to_string_lossy().into_owned(),
     );
-    m.insert("ROLE_STORAGE_PATH".into(), sgpt_dir.join("roles").to_string_lossy().into_owned());
+    m.insert(
+        "ROLE_STORAGE_PATH".into(),
+        sgpt_dir.join("roles").to_string_lossy().into_owned(),
+    );
     m.insert(
         "OPENAI_FUNCTIONS_PATH".into(),
         sgpt_dir.join("functions").to_string_lossy().into_owned(),

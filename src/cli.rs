@@ -4,6 +4,7 @@ use clap::{ArgGroup, Parser};
 #[command(name = "sgpt", about = "ShellGPT Rust CLI", version)]
 #[command(group(ArgGroup::new("mode").args(["shell", "describe_shell", "code", "search", "enhanced_search"]).multiple(false)))]
 #[command(group(ArgGroup::new("chat_mode").args(["chat", "repl"]).multiple(false)))]
+#[command(group(ArgGroup::new("lang_mode").args(["python", "r"]).multiple(false)))]
 #[command(group(ArgGroup::new("md_switch").args(["md", "no_md"]).multiple(false)))]
 #[command(group(ArgGroup::new("interaction_switch").args(["interaction", "no_interaction"]).multiple(false)))]
 #[command(group(ArgGroup::new("cache_switch").args(["cache", "no_cache"]).multiple(false)))]
@@ -45,6 +46,14 @@ pub struct Cli {
     /// Generate and execute shell commands.
     #[arg(short = 's', long)]
     pub shell: bool,
+
+    /// Start a persistent Python execution session (mutually exclusive with --shell/--r).
+    #[arg(long = "python")]
+    pub python: bool,
+
+    /// Start a persistent R execution session (mutually exclusive with --shell/--python).
+    #[arg(long = "r")]
+    pub r: bool,
 
     /// Override target shell for command generation (auto|powershell|cmd|bash|zsh|fish|sh).
     #[arg(long = "target-shell")]

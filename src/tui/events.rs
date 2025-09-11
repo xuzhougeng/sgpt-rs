@@ -1,7 +1,9 @@
 //! Custom event types for TUI application.
 
+use crate::execution::ExecutionResult;
 use crate::llm::StreamEvent;
-use crossterm::event::KeyEvent;
+use crate::process::InterpreterType;
+use crossterm::event::{KeyEvent, MouseEvent};
 
 /// Events that can occur in the TUI application
 #[derive(Debug)]
@@ -10,6 +12,8 @@ pub enum TuiEvent {
     Key(KeyEvent),
     /// LLM streaming response event
     LlmStream(StreamEvent),
+    /// Mouse event (for scrolling)
+    Mouse(MouseEvent),
     /// User input text (processed from keyboard events)
     UserInput(String),
     /// Request to quit the application
@@ -24,4 +28,21 @@ pub enum TuiEvent {
     ProcessNextMessage,
     /// Session state change
     SessionUpdate,
+
+    // --- Analytics/Interpreter mode events ---
+    /// Execute provided code in the selected interpreter
+    ExecuteCode {
+        language: InterpreterType,
+        code: String,
+    },
+    /// Code execution result returned from interpreter
+    CodeExecutionResult(ExecutionResult),
+    /// Switch current interpreter (Python/R)
+    SwitchInterpreter(InterpreterType),
+    /// Show variables summary from interpreter session
+    ShowVariables,
+    /// Variables snapshot string to display
+    VariablesSnapshot(String),
+    /// Clear current interpreter session (restart)
+    ClearSession,
 }

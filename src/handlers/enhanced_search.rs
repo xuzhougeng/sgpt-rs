@@ -60,20 +60,24 @@ impl EnhancedSearchHandler {
         md_enabled: bool,
     ) -> Result<()> {
         let mut handler = Self::new(config, md_enabled)?;
-        
+
         println!("🔍 Step 1: Analyzing intent and building search queries...");
-        let search_plan = handler.analyze_intent_and_build_queries(query, model, temperature, top_p).await?;
-        
+        let search_plan = handler
+            .analyze_intent_and_build_queries(query, model, temperature, top_p)
+            .await?;
+
         println!("📊 Generated {} search queries:", search_plan.queries.len());
         for (i, sq) in search_plan.queries.iter().enumerate() {
             println!("  {}. {} ({})", i + 1, sq.query, sq.purpose);
         }
-        
+
         println!("\n🔎 Step 2: Executing multi-dimensional search...");
         let search_results = handler.execute_multi_search(&search_plan.queries).await?;
-        
+
         println!("📝 Step 3: Analyzing results and generating comprehensive answer...\n");
-        handler.generate_final_answer(query, &search_results, model, temperature, top_p).await?;
+        handler
+            .generate_final_answer(query, &search_results, model, temperature, top_p)
+            .await?;
 
         Ok(())
     }
@@ -106,7 +110,10 @@ Guidelines:
 - Use keywords that are likely to find relevant results
 - Keep queries concise but informative"#;
 
-        let user_message = format!("Please analyze this question and create 3 search queries: {}", user_query);
+        let user_message = format!(
+            "Please analyze this question and create 3 search queries: {}",
+            user_query
+        );
 
         let messages = vec![
             ChatMessage {
@@ -139,7 +146,7 @@ Guidelines:
             match ev? {
                 StreamEvent::Content(t) => response.push_str(&t),
                 StreamEvent::Done => break,
-                _ => {},
+                _ => {}
             }
         }
 
@@ -148,7 +155,10 @@ Guidelines:
             .map_err(|e| anyhow::anyhow!("Failed to parse search plan JSON: {}", e))?;
 
         if search_plan.queries.len() != 3 {
-            bail!("Expected exactly 3 search queries, got {}", search_plan.queries.len());
+            bail!(
+                "Expected exactly 3 search queries, got {}",
+                search_plan.queries.len()
+            );
         }
 
         Ok(search_plan)
@@ -156,7 +166,7 @@ Guidelines:
 
     async fn execute_multi_search(&self, queries: &[SearchQuery]) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
-        
+
         for query in queries {
             println!("  Searching: {}", query.query);
             match self.tavily_client.search(&query.query).await {
@@ -176,28 +186,40 @@ Guidelines:
                 }
             }
         }
-        
+
         Ok(results)
     }
 
     fn parse_tavily_results(&self, value: &Value) -> Vec<SearchItem> {
         let mut items = Vec::new();
-        
+
         if let Some(results) = value.get("results").and_then(|v| v.as_array()) {
             for item in results {
-                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let url = item
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let snippet = item
                     .get("snippet")
                     .or_else(|| item.get("content"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                
-                items.push(SearchItem { title, url, snippet });
+
+                items.push(SearchItem {
+                    title,
+                    url,
+                    snippet,
+                });
             }
         }
-        
+
         items
     }
 
@@ -228,7 +250,7 @@ Guidelines:
         // Format search results for the prompt
         let mut context = String::new();
         context.push_str("Search Results:\n\n");
-        
+
         for (i, result) in search_results.iter().enumerate() {
             context.push_str(&format!("Query {}: {}\n", i + 1, result.query));
             for (j, item) in result.results.iter().enumerate() {
@@ -282,7 +304,7 @@ Guidelines:
                     }
                 }
                 Ok(StreamEvent::Done) => break,
-                Ok(_) => {}, // Other events
+                Ok(_) => {} // Other events
                 Err(e) => {
                     eprintln!("Stream error: {}", e);
                     break;

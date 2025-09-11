@@ -109,7 +109,11 @@ impl LlmClient {
             .timeout(Duration::from_secs(timeout))
             .build()?;
 
-        Ok(Self { http, base_url, api_key })
+        Ok(Self {
+            http,
+            base_url,
+            api_key,
+        })
     }
 
     pub fn chat_stream(
@@ -262,8 +266,8 @@ impl LlmClient {
 
             // Check if this is a shell mode based on system message
             let is_shell_mode = messages.iter()
-                .any(|msg| msg.role == Role::System && 
-                     (msg.content.contains("shell command") || 
+                .any(|msg| msg.role == Role::System &&
+                     (msg.content.contains("shell command") ||
                       msg.content.contains("Shell Command Generator")));
 
             // Generate appropriate fake response
@@ -277,7 +281,7 @@ impl LlmClient {
             for chunk in response.chars().collect::<Vec<_>>().chunks(3) {
                 let chunk_str: String = chunk.iter().collect();
                 yield StreamEvent::Content(chunk_str);
-                
+
                 // Small delay to simulate network latency (in a real async context)
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
@@ -290,7 +294,7 @@ impl LlmClient {
 /// Generate fake shell command responses
 fn generate_fake_shell_response(user_input: &str) -> String {
     let input_lower = user_input.to_lowercase();
-    
+
     let response = if input_lower.contains("list") || input_lower.contains("show") {
         if input_lower.contains("file") {
             "ls -la"
@@ -327,7 +331,10 @@ fn generate_fake_shell_response(user_input: &str) -> String {
         "docker ps -a"
     } else {
         // Default response for unrecognized patterns
-        return format!("# Fake response for: {}\necho \"This is a simulated shell command response\"", user_input);
+        return format!(
+            "# Fake response for: {}\necho \"This is a simulated shell command response\"",
+            user_input
+        );
     };
     response.to_string()
 }
@@ -335,7 +342,7 @@ fn generate_fake_shell_response(user_input: &str) -> String {
 /// Generate fake chat responses  
 fn generate_fake_chat_response(user_input: &str) -> String {
     let input_lower = user_input.to_lowercase();
-    
+
     if input_lower.contains("hello") || input_lower.contains("hi") {
         "Hello! I'm a fake AI assistant for testing purposes. How can I help you today?".to_string()
     } else if input_lower.contains("how are you") {
@@ -356,7 +363,10 @@ fn generate_fake_chat_response(user_input: &str) -> String {
 #[derive(Debug)]
 pub enum StreamEvent {
     Content(String),
-    ToolCallDelta { name: Option<String>, arguments: Option<String> },
+    ToolCallDelta {
+        name: Option<String>,
+        arguments: Option<String>,
+    },
     ToolCallsFinish,
     Done,
 }
