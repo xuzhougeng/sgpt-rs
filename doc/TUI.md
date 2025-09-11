@@ -145,19 +145,18 @@ pub enum TuiEvent {
 ┌─────────────────────────────────────────────────┐
 │ Chat History - Session: test | Model: deepseek  │
 │                                                 │
-│ >>> user input                                  │
+│ > user input                                    │
 │ AI response here...                             │
-│ >>> another input                               │  
+│ > another input                                 │  
 │ AI response continues...                        │
 │                                                 │
 └─────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────┐
-│ Input (type """ for multiline)                  │
-│ [user typing here]                              │ 
+│ Input                                           │
+│ [user typing here]                              │
 └─────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────┐
-│ Shell REPL: e=execute, r=repeat, d=describe     │
-│ | Ctrl+C=quit, F1=help | Queued: 2             │
+│ Shell REPL: e=execute, r=repeat, d=describe | ctrl+h help │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -225,6 +224,25 @@ pub enum TuiEvent {
 └──────────────────────────────────────┘
 ```
 
+## 键位与交互
+
+### 常用快捷键
+
+- Enter: 发送当前输入
+- Shift+Enter: 插入换行（自动进入多行模式，输入框高度随行数自动增长）。若终端不支持 Shift+Enter 检测，可用 Ctrl+J 作为换行备用键。
+- Ctrl+S: 发送（备用发送键，兼容性更好）
+- Ctrl+M: 切换多行模式（可选，手动在单/多行之间切换）
+- Ctrl+C: 清空输入；连续两次快速按 Ctrl+C 退出
+- Ctrl+D: 退出
+- F1: 显示/隐藏帮助
+- ↑/↓: 浏览历史输入；在多行模式或按住 Ctrl 时用于滚动聊天区
+
+输入框标题会显示当前模式提示：
+- 单行：Input (Enter=send, Shift+Enter=newline)
+- 多行：Multi-line Input (Enter=send, Shift+Enter=newline)
+
+多行输入时，输入区域高度会根据行数自动增加，并在终端空间内进行合理约束，保证聊天区与状态栏可见。
+
 ## 用户交互流程
 
 ### 1. 常规对话模式
@@ -256,11 +274,11 @@ pub enum TuiEvent {
 
 ### 3. 多行输入流程
 
-1. 用户输入 `"""` 进入多行模式
-2. 输入框标题变为 "Multi-line Input"
-3. 逐行输入内容
-4. 再次输入 `"""` 结束多行输入
-5. 完整多行内容作为一条消息发送
+1. 在任意时刻，按 Shift+Enter 插入换行，自动进入多行模式
+2. 输入框标题显示为 "Multi-line Input (Enter=send, Shift+Enter=newline)"
+3. 继续 Shift+Enter 进行换行；输入区域高度随行数自动增加
+4. 按 Enter 发送整段多行文本
+5. 也可通过 Ctrl+M 手动切换单/多行模式
 
 ## 性能优化策略
 

@@ -55,6 +55,8 @@ pub enum TuiEvent {
     ShowVariables,
     /// Variables snapshot string to display
     VariablesSnapshot(String),
+    /// Bracketed paste content
+    Paste(String),
     /// Clear current interpreter session (restart)
     ClearSession,
 }

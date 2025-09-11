@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
@@ -13,14 +13,26 @@ use crate::llm::Role;
 
 /// Render the main UI
 pub fn render_ui(frame: &mut Frame, app: &App) {
+    // Dynamically size the input area based on multiline state
+    let area = frame.area();
+    let input_lines = match app.input_mode {
+        InputMode::Normal => 1u16,
+        InputMode::MultiLine => (app.multiline_buffer.len() as u16).saturating_add(1),
+    };
+    // Account for borders around the input box (+2). Minimum visual height is 3.
+    let desired_input_height = input_lines.saturating_add(2).max(3);
+    // Ensure chat area (min 3) and status bar (1) always have room
+    let max_input_height = area.height.saturating_sub(4);
+    let input_height = desired_input_height.min(max_input_height.max(1));
+
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),    // Chat area
-            Constraint::Length(3), // Input area
-            Constraint::Length(1), // Status bar
+            Constraint::Min(3),              // Chat area
+            Constraint::Length(input_height), // Input area (dynamic)
+            Constraint::Length(1),           // Status bar
         ])
-        .split(frame.area());
+        .split(area);
 
     // Render chat area
     render_chat_area(frame, app, main_layout[0]);
@@ -66,7 +78,7 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     // Build content as styled text lines
     for msg in visible_msgs {
         let (prefix, style) = match msg.role {
-            Role::User => (">>> ", Style::default().fg(Color::Green)),
+            Role::User => ("> ", Style::default().fg(Color::Green)),
             Role::Assistant => ("", Style::default().fg(Color::Cyan)),
             Role::System => ("SYS ", Style::default().fg(Color::Yellow)),
             Role::Tool => ("TOOL ", Style::default().fg(Color::Magenta)),
@@ -109,7 +121,17 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
 
     // Create paragraph with scrolling
     let mut paragraph = Paragraph::new(text_content)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(title)
+                .title_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        )
         .wrap(Wrap { trim: false });
 
     if total_lines > available_height {
@@ -134,49 +156,132 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Render the input area
 fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
-    let input_text = match app.input_mode {
-        InputMode::Normal => app.input.clone(),
+    // Compute lines for rendering
+    let (lines, cursor_line_idx, cursor_col) = match app.input_mode {
+        InputMode::Normal => {
+            let l = vec![app.input.clone()];
+            (l, 0usize, app.input_cursor.min(app.input.len()))
+        }
         InputMode::MultiLine => {
-            if app.multiline_buffer.is_empty() {
-                app.input.clone()
-            } else {
-                format!("{}\n{}", app.multiline_buffer.join("\n"), app.input)
-            }
+            let mut l = app.multiline_buffer.clone();
+            l.push(app.input.clone());
+            let idx = l.len().saturating_sub(1);
+            (l, idx, app.input_cursor.min(app.input.len()))
         }
     };
 
     let title = match app.input_mode {
-        InputMode::Normal => "Input (type \"\"\" for multiline)",
-        InputMode::MultiLine => "Multi-line Input (\"\"\" to finish)",
+        InputMode::Normal => "Input",
+        InputMode::MultiLine => "Multi-line Input",
     };
 
-    let input_paragraph = Paragraph::new(input_text)
-        .block(Block::default().borders(Borders::ALL).title(title))
+    // Horizontal scrolling: clamp each line to visible width; for current line ensure cursor is visible
+    let inner_width = area.width.saturating_sub(2) as usize; // account for borders
+    let mut visible_lines: Vec<String> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if inner_width == 0 {
+            visible_lines.push(String::new());
+            continue;
+        }
+        if i == cursor_line_idx {
+            let cur = cursor_col.min(line.len());
+            let start = if cur >= inner_width {
+                cur + 1 - inner_width
+            } else {
+                0
+            };
+            let slice = line
+                .chars()
+                .skip(start)
+                .take(inner_width)
+                .collect::<String>();
+            visible_lines.push(slice);
+        } else {
+            let slice = line.chars().take(inner_width).collect::<String>();
+            visible_lines.push(slice);
+        }
+    }
+
+    let input_text = visible_lines.join("\n");
+
+    let input_paragraph = Paragraph::new(input_text.clone())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(title)
+                .title_style(
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        )
         .wrap(Wrap { trim: true });
 
     frame.render_widget(input_paragraph, area);
+
+    // Position the cursor inside the input box
+    // Border takes 1 cell, so start at x + 1, y + 1
+    let inner_x = area.x.saturating_add(1);
+    let inner_y = area.y.saturating_add(1);
+    let inner_height = area.height.saturating_sub(2) as usize;
+
+    // Determine rendered cursor x based on horizontal scroll
+    let x_off = if inner_width == 0 {
+        0
+    } else {
+        let start = if cursor_col >= inner_width {
+            cursor_col + 1 - inner_width
+        } else {
+            0
+        };
+        (cursor_col - start).min(inner_width - 1)
+    } as u16;
+
+    let y_off = match app.input_mode {
+        InputMode::Normal => 0u16,
+        InputMode::MultiLine => (cursor_line_idx.min(inner_height.saturating_sub(1))) as u16,
+    };
+
+    frame.set_cursor_position((inner_x + x_off, inner_y + y_off));
 }
 
 /// Render the status bar
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let status_text = if app.is_shell_mode && app.allow_interaction && !app.last_command.is_empty()
-    {
-        format!(
-            "{} | Last: {}",
-            app.status_message,
-            if app.last_command.len() > 50 {
-                format!("{}...", &app.last_command[..50])
-            } else {
-                app.last_command.clone()
-            }
-        )
-    } else {
-        app.status_message.clone()
-    };
+    // Build base status text (reuse existing semantics)
+    // Minimal status text per user preference
+    let base_text = app.status_message.clone();
 
-    let status_paragraph =
-        Paragraph::new(status_text).style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    // Spinner while streaming
+    let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let tick = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        / 120
+        % spinner_frames.len() as u128) as usize;
 
+    let mut spans: Vec<Span> = Vec::new();
+    if app.is_receiving_response {
+        spans.push(Span::styled(
+            format!(" {} ", spinner_frames[tick]),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    spans.push(
+        Span::styled(
+            base_text,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    );
+
+    let line = Line::from(spans);
+    let status_paragraph = Paragraph::new(line).style(Style::default().bg(Color::DarkGray));
     frame.render_widget(status_paragraph, area);
 }
 
@@ -192,36 +297,20 @@ fn render_help_overlay(frame: &mut Frame, app: &App) {
 
     let help_lines = if app.is_shell_mode && app.allow_interaction {
         vec![
-            Line::from("Shell REPL Mode Help"),
+            Line::from("Shell REPL Help (Ctrl+H to close)"),
             Line::from(""),
-            Line::from("Navigation:"),
-            Line::from("  ↑/↓        - Scroll chat history"),
-            Line::from("  Ctrl+C     - Quit"),
-            Line::from("  F1         - Toggle this help"),
-            Line::from(""),
-            Line::from("Input:"),
-            Line::from("  Enter      - Send message/command"),
-            Line::from("  \"\"\"        - Start/end multi-line input"),
-            Line::from(""),
-            Line::from("Shell Shortcuts:"),
-            Line::from("  e          - Execute last command"),
-            Line::from("  r          - Repeat last command"),
-            Line::from("  d          - Describe last command"),
-            Line::from("  exit()     - Quit REPL"),
+            Line::from("Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline"),
+            Line::from("↑/↓ = Scroll    | Ctrl+↑/↓ = Scroll chat"),
+            Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help"),
+            Line::from("e = Execute last | r = Repeat | d = Describe | exit() = Quit REPL"),
         ]
     } else {
         vec![
-            Line::from("Chat Mode Help"),
+            Line::from("Help (Ctrl+H to close)"),
             Line::from(""),
-            Line::from("Navigation:"),
-            Line::from("  ↑/↓        - Scroll chat history"),
-            Line::from("  Ctrl+C     - Quit"),
-            Line::from("  F1         - Toggle this help"),
-            Line::from(""),
-            Line::from("Input:"),
-            Line::from("  Enter      - Send message"),
-            Line::from("  \"\"\"        - Start/end multi-line input"),
-            Line::from("  exit()     - Quit REPL"),
+            Line::from("Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline"),
+            Line::from("↑/↓ = History    | Ctrl+↑/↓ = Scroll chat"),
+            Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help"),
         ]
     };
 
@@ -230,6 +319,7 @@ fn render_help_overlay(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Help")
                 .title_style(
                     Style::default()
@@ -288,6 +378,7 @@ fn render_execution_result_popup(frame: &mut Frame, command: &str, output: &str)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Executed Command")
                 .title_style(
                     Style::default()
@@ -303,6 +394,7 @@ fn render_execution_result_popup(frame: &mut Frame, command: &str, output: &str)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Output")
                 .title_style(
                     Style::default()
@@ -316,7 +408,11 @@ fn render_execution_result_popup(frame: &mut Frame, command: &str, output: &str)
     // Render instructions
     let instructions = Paragraph::new("Press any key to close")
         .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        );
     frame.render_widget(instructions, popup_layout[2]);
 }
 
@@ -350,6 +446,7 @@ fn render_streaming_description_popup(
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Command")
                 .title_style(
                     Style::default()
@@ -379,6 +476,7 @@ fn render_streaming_description_popup(
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title(title)
                 .title_style(
                     Style::default()
@@ -398,7 +496,11 @@ fn render_streaming_description_popup(
 
     let instructions = Paragraph::new(instructions_text)
         .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        );
     frame.render_widget(instructions, popup_layout[2]);
 }
 
@@ -427,6 +529,7 @@ fn render_description_popup(frame: &mut Frame, command: &str, description: &str)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Command")
                 .title_style(
                     Style::default()
@@ -442,6 +545,7 @@ fn render_description_popup(frame: &mut Frame, command: &str, description: &str)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Description")
                 .title_style(
                     Style::default()
@@ -455,6 +559,10 @@ fn render_description_popup(frame: &mut Frame, command: &str, description: &str)
     // Render instructions
     let instructions = Paragraph::new("Press any key to close")
         .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        );
     frame.render_widget(instructions, popup_layout[2]);
 }

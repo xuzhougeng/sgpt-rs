@@ -641,16 +641,16 @@ impl LlmClient {
     /// Check if an error indicates multimodal/vision API incompatibility and enhance error message
     fn enhance_multimodal_error(error: anyhow::Error) -> anyhow::Error {
         let error_str = error.to_string().to_lowercase();
-        
-        if error_str.contains("multimodal") ||
-           error_str.contains("vision") ||  
-           error_str.contains("image") ||
-           error_str.contains("content") ||
-           error_str.contains("deserialize") ||
-           error_str.contains("untagged enum") ||
-           error_str.contains("chatcompletionrequestcontent") ||
-           error_str.contains("did not match any variant") {
-            
+
+        if error_str.contains("multimodal")
+            || error_str.contains("vision")
+            || error_str.contains("image")
+            || error_str.contains("content")
+            || error_str.contains("deserialize")
+            || error_str.contains("untagged enum")
+            || error_str.contains("chatcompletionrequestcontent")
+            || error_str.contains("did not match any variant")
+        {
             anyhow::anyhow!(
                 "❌ Your LLM provider doesn't support --image functionality.\n\
                  💡 Try running without --image parameter, or use a provider that supports vision models (like OpenAI GPT-4o).\n\

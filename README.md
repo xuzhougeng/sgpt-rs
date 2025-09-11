@@ -112,11 +112,11 @@ Adding `--repl <id>` on top of shell enters interactive command line. After gett
 sgpt --shell --repl temp
 Entering REPL mode, press Ctrl+C to exit.
 Shell REPL shortcuts: e=execute, r=repeat, d=describe, p=print, m=modify; type exit() to quit.
->>> find rust file count
+> find rust file count
 find . -name "*.rs" -type f | wc -l
->>> e
+> e
 22
->>>  
+>  
 ```
 
 ### Windows & PowerShell Support

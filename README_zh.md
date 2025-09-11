@@ -80,7 +80,7 @@ sgpt --list-chats
 sgpt --chat temp "这一轮不会被保存"
 ```
 
-开启一个“常驻的交互式多轮会话”, 参数`--repl <id>` 
+开启一个“常驻的交互式多轮会话”（TUI），参数 `--repl <id>` 
 
 ```bash
 sgpt --repl test2
@@ -112,13 +112,13 @@ sgpt --shell '统计rs文件数'
 
 ```bash
 sgpt --shell --repl temp
-Entering REPL mode, press Ctrl+C to exit.
-Shell REPL shortcuts: e=execute, r=repeat, d=describe, p=print, m=modify; type exit() to quit.
->>> 查找rust文件的数量
-find . -name "*.rs" -type f | wc -l
->>> e
-22
->>>  
+状态栏：
+  - Shell REPL: e=execute, r=repeat, d=describe | ctrl+h help
+  - Python/R REPL: e=execute, r=repeat | ctrl+h help
+
+输入与帮助：
+  - Enter=发送，Shift+Enter=换行（备用：Ctrl+S 发送，Ctrl+J 换行）
+  - Ctrl+H 或 F1 弹出/关闭简洁帮助
 ```
 
 Windows 与 PowerShell 支持
@@ -201,4 +201,3 @@ sgpt -e "Who is Leo Messi?"
 - `doc/Config.md`: .config/sgpt_rs/.sgptrc 可以配置的参数说明
 - `doc/Role.md`: 跟角色配置相关的参数的详细说明
 - `doc/Model.md`: 项目内置兼容 OpenAI Chat Completions 的流式客户端，支持工具调用（function-calling）。关于配置、数据结构、流式事件、错误提示与使用示例
-

@@ -4,7 +4,12 @@ use std::io;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
+use crossterm::event::{
+    self,
+    DisableBracketedPaste, EnableBracketedPaste,
+    Event, KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseEventKind,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -53,6 +58,14 @@ pub async fn run_tui_repl(
     let mut stdout = io::stdout();
     stdout.execute(EnterAlternateScreen)?;
     stdout.execute(crossterm::event::EnableMouseCapture)?;
+    // Enable richer keyboard reporting so Shift+Enter etc. can be detected when supported.
+    let _ = stdout.execute(EnableBracketedPaste);
+    let _ = stdout.execute(PushKeyboardEnhancementFlags(
+        KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+            | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+            | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES,
+    ));
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -116,13 +129,24 @@ pub async fn run_tui_repl(
     )
     .await;
 
-    // Restore terminal
+    // Restore terminal: follow crossterm recommended order and fully reset
     disable_raw_mode()?;
+    terminal.backend_mut().execute(LeaveAlternateScreen)?;
     terminal
         .backend_mut()
         .execute(crossterm::event::DisableMouseCapture)?;
-    terminal.backend_mut().execute(LeaveAlternateScreen)?;
+    let _ = terminal.backend_mut().execute(DisableBracketedPaste);
+    let _ = terminal.backend_mut().execute(PopKeyboardEnhancementFlags);
     terminal.show_cursor()?;
+
+    // Drop terminal backend before writing to stdout
+    drop(terminal);
+
+    // Ensure the shell prompt returns cleanly without requiring an extra keypress
+    use std::io::Write as _;
+    let mut out = io::stdout();
+    write!(out, "\r\n")?;
+    out.flush()?;
 
     result
 }
@@ -334,10 +358,15 @@ while True:
         _py_child_opt = Some(child);
     }
     let mut req_counter: u64 = 1;
-    // Spawn input handler
+    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let running_clone = running.clone();
+    // Spawn input handler (blocking) and keep a handle so we can abort it cleanly on exit
     let input_tx = event_tx.clone();
-    tokio::task::spawn_blocking(move || {
+    let input_handle = tokio::task::spawn_blocking(move || {
         loop {
+            if !running_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             // Poll for keyboard events
             if event::poll(Duration::from_millis(100)).unwrap_or(false) {
                 match event::read() {
@@ -348,6 +377,11 @@ while True:
                     }
                     Ok(Event::Mouse(m)) => {
                         if let Err(_) = input_tx.send(TuiEvent::Mouse(m)) {
+                            break;
+                        }
+                    }
+                    Ok(Event::Paste(s)) => {
+                        if let Err(_) = input_tx.send(TuiEvent::Paste(s)) {
                             break;
                         }
                     }
@@ -390,6 +424,9 @@ while True:
                         )
                         .await?;
                     }
+                }
+                TuiEvent::Paste(content) => {
+                    app_paste_text(app, &content);
                 }
                 TuiEvent::ProcessNextMessage => {
                     // Process next message from queue
@@ -549,6 +586,10 @@ while True:
         tokio::time::sleep(Duration::from_millis(16)).await; // ~60 FPS
     }
 
+    // Signal input thread to stop and wait a moment for it to exit
+    running.store(false, std::sync::atomic::Ordering::SeqCst);
+    let _ = input_handle.await;
+
     // Attempt to terminate interpreter if running
     if let Some(mut child) = _py_child_opt {
         let _ = child.kill().await;
@@ -569,7 +610,70 @@ async fn handle_key_event(
     }
 
     match key.code {
+        // Fallback newline: Ctrl+J inserts newline (for terminals not reporting Shift+Enter)
+        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            match app.input_mode {
+                InputMode::Normal => {
+                    app.input_mode = InputMode::MultiLine;
+                    if !app.input.is_empty() {
+                        app.multiline_buffer.push(app.input.clone());
+                        app.input.clear();
+                        app.input_cursor = 0;
+                    }
+                }
+                InputMode::MultiLine => {
+                    app.multiline_buffer.push(app.input.clone());
+                    app.input.clear();
+                    app.input_cursor = 0;
+                }
+            }
+        }
+        // Fallback submit: Ctrl+S to send (some terminals can't detect Ctrl+Enter)
+        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let input = app.get_input_text();
+
+            if input.trim() == "exit()" {
+                return Ok(true);
+            }
+
+            if (app.is_shell_mode && app.allow_interaction) || app.interpreter.is_some() {
+                match input.trim() {
+                    "e" | "r" if !app.last_command.is_empty() => {
+                        if app.interpreter.is_some() {
+                            let lang = app.interpreter.unwrap();
+                            let _ = event_tx.send(TuiEvent::ExecuteCode {
+                                language: lang,
+                                code: app.last_command.clone(),
+                            });
+                        } else {
+                            let _ = event_tx.send(TuiEvent::ExecuteCommand(app.last_command.clone()));
+                        }
+                        app.clear_input();
+                        return Ok(false);
+                    }
+                    "d" if !app.last_command.is_empty() => {
+                        let _ = event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
+                        app.clear_input();
+                        return Ok(false);
+                    }
+                    _ => {}
+                }
+            }
+
+            if !input.trim().is_empty() {
+                app.push_history(input.clone());
+                let _ = event_tx.send(TuiEvent::UserInput(input));
+            }
+            app.clear_input();
+        }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Handle double Ctrl+C for quit, single Ctrl+C for clear
+            if app.handle_ctrl_c() {
+                return Ok(true); // Quit on double Ctrl+C
+            }
+            return Ok(false);
+        }
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             return Ok(true); // Quit
         }
         KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -577,43 +681,96 @@ async fn handle_key_event(
                 let _ = event_tx.send(TuiEvent::ShowVariables);
             }
         }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Try to expand collapsed paste content
+            app.try_expand_collapsed_paste();
+        }
+        KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Toggle multiline mode
+            match app.input_mode {
+                InputMode::Normal => {
+                    app.input_mode = InputMode::MultiLine;
+                    // If there's existing input, move it to multiline buffer
+                    if !app.input.is_empty() {
+                        app.multiline_buffer.push(app.input.clone());
+                        app.input.clear();
+                        app.input_cursor = 0;
+                    }
+                }
+                InputMode::MultiLine => {
+                    // Convert back to normal mode, joining all lines
+                    if !app.multiline_buffer.is_empty() || !app.input.is_empty() {
+                        let mut all_lines = app.multiline_buffer.clone();
+                        if !app.input.is_empty() {
+                            all_lines.push(app.input.clone());
+                        }
+                        app.input = all_lines.join("\n");
+                        app.input_cursor = app.input.len();
+                        app.multiline_buffer.clear();
+                    }
+                    app.input_mode = InputMode::Normal;
+                }
+            }
+        }
         KeyCode::F(1) => {
             app.toggle_help();
         }
+        KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Toggle help via Ctrl+H (as requested). Note: some terminals map Ctrl+H to Backspace.
+            app.toggle_help();
+        }
+        KeyCode::Char('/') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.toggle_help();
+        }
+        KeyCode::Char('?') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.toggle_help();
+        }
         KeyCode::Up => {
-            app.scroll_up();
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                || app.input_mode == InputMode::MultiLine
+            {
+                app.scroll_up();
+            } else {
+                app.history_prev();
+            }
         }
         KeyCode::Down => {
-            app.scroll_down();
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                || app.input_mode == InputMode::MultiLine
+            {
+                app.scroll_down();
+            } else {
+                app.history_next();
+            }
         }
         KeyCode::Enter => {
-            let input = app.get_input_text();
-
-            // Handle special inputs
-            if input.trim() == "exit()" {
-                return Ok(true);
-            }
-
-            // Handle multiline mode
-            if input.trim() == "\"\"\"" {
+            // New behavior: Enter=send, Shift+Enter=newline
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                // Shift+Enter -> newline (force multiline behavior)
                 match app.input_mode {
                     InputMode::Normal => {
                         app.input_mode = InputMode::MultiLine;
-                        app.clear_input();
-                    }
-                    InputMode::MultiLine => {
-                        let multiline_input = app.multiline_buffer.join("\n");
-                        app.clear_input();
-                        if !multiline_input.trim().is_empty() {
-                            let _ = event_tx.send(TuiEvent::UserInput(multiline_input));
+                        if !app.input.is_empty() {
+                            app.multiline_buffer.push(app.input.clone());
+                            app.input.clear();
+                            app.input_cursor = 0;
                         }
                     }
+                    InputMode::MultiLine => {
+                        app.multiline_buffer.push(app.input.clone());
+                        app.input.clear();
+                        app.input_cursor = 0;
+                    }
                 }
-            } else if app.input_mode == InputMode::MultiLine {
-                app.multiline_buffer.push(app.input.clone());
-                app.input.clear();
             } else {
-                // Handle shell/interpreter shortcuts
+                // Enter (no Shift) -> submit
+                let input = app.get_input_text();
+
+                if input.trim() == "exit()" {
+                    return Ok(true);
+                }
+
+                // Handle shell/interpreter shortcuts for single letters
                 if (app.is_shell_mode && app.allow_interaction) || app.interpreter.is_some() {
                     match input.trim() {
                         "e" | "r" if !app.last_command.is_empty() => {
@@ -631,8 +788,7 @@ async fn handle_key_event(
                             return Ok(false);
                         }
                         "d" if !app.last_command.is_empty() => {
-                            let _ =
-                                event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
+                            let _ = event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
                             app.clear_input();
                             return Ok(false);
                         }
@@ -640,18 +796,37 @@ async fn handle_key_event(
                     }
                 }
 
-                // Send regular input
                 if !input.trim().is_empty() {
+                    app.push_history(input.clone());
                     let _ = event_tx.send(TuiEvent::UserInput(input));
                 }
                 app.clear_input();
             }
         }
         KeyCode::Backspace => {
-            app.input.pop();
+            app.backspace();
+        }
+        KeyCode::Delete => {
+            app.delete();
+        }
+        KeyCode::Left => {
+            app.move_cursor_left();
+        }
+        KeyCode::Right => {
+            app.move_cursor_right();
+        }
+        KeyCode::Home => {
+            app.move_cursor_home();
+        }
+        KeyCode::End => {
+            app.move_cursor_end();
         }
         KeyCode::Char(c) => {
-            app.input.push(c);
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                // Ignore control-modified chars for now
+            } else {
+                app.insert_char(c);
+            }
         }
         _ => {}
     }
@@ -706,23 +881,116 @@ async fn handle_user_input(
 
     // Spawn task to handle streaming response
     let _chat_id = app.chat_id.clone();
+    let model_for_error = app.model.clone();
     tokio::spawn(async move {
         while let Some(event_result) = stream.next().await {
             match event_result {
                 Ok(stream_event) => {
-                    if let Err(_) = event_tx.send(TuiEvent::LlmStream(stream_event)) {
+                    if event_tx.send(TuiEvent::LlmStream(stream_event)).is_err() {
                         break; // Channel closed
                     }
                 }
-                Err(_) => {
-                    // Handle stream errors
+                Err(err) => {
+                    // On stream error, surface a friendly message and ensure we close the response
+                    let friendly = format_stream_error_message(&err.to_string(), &model_for_error);
+                    let _ = event_tx.send(TuiEvent::LlmStream(StreamEvent::Content(friendly)));
+                    let _ = event_tx.send(TuiEvent::LlmStream(StreamEvent::Done));
                     break;
                 }
             }
         }
+        // If the stream ended without explicitly sending Done (rare), send Done to unblock queue
+        let _ = event_tx.send(TuiEvent::LlmStream(StreamEvent::Done));
     });
 
     Ok(())
+}
+
+fn app_paste_text(app: &mut App, content: &str) {
+    const MAX_PASTE_CHARS: usize = 1000;
+
+    let char_count = content.chars().count();
+    let content_to_insert = if char_count > MAX_PASTE_CHARS {
+        // Show collapsed indicator instead of full content
+        format!("[pasted content {} chars]", char_count)
+    } else {
+        content.to_string()
+    };
+
+    // Store the actual content in a field if we collapsed it, so user can expand if needed
+    if char_count > MAX_PASTE_CHARS {
+        app.store_collapsed_paste_content(content.to_string());
+    }
+
+    let content = &content_to_insert;
+
+    // Check if content contains newlines
+    let has_newlines = content.contains('\n');
+
+    match app.input_mode {
+        InputMode::Normal => {
+            if has_newlines {
+                // Auto-switch to multiline mode for multi-line paste
+                app.input_mode = InputMode::MultiLine;
+
+                // Insert content properly in multiline mode
+                let lines: Vec<String> = content.split('\n').map(|s| s.to_string()).collect();
+                if lines.len() > 1 {
+                    // Add all but the last line to multiline buffer
+                    for line in &lines[..lines.len() - 1] {
+                        app.multiline_buffer.push(line.clone());
+                    }
+                    // Set the last line as current input
+                    app.input = lines.last().unwrap_or(&String::new()).clone();
+                    app.input_cursor = app.input.len();
+                } else {
+                    // Single line, just insert normally
+                    app.input.insert_str(app.input_cursor, content);
+                    app.input_cursor += content.chars().count();
+                }
+            } else {
+                // Single line paste in normal mode
+                app.input.insert_str(app.input_cursor, content);
+                app.input_cursor += content.chars().count();
+            }
+        }
+        InputMode::MultiLine => {
+            // Already in multiline mode, insert at current position
+            if has_newlines {
+                let before = app.input.chars().take(app.input_cursor).collect::<String>();
+                let after = app.input.chars().skip(app.input_cursor).collect::<String>();
+
+                let lines: Vec<&str> = content.split('\n').collect();
+                if let Some(first) = lines.first() {
+                    let new_first_line = before + first;
+
+                    if lines.len() == 1 {
+                        // Single line in multi-line content
+                        let cursor_pos = new_first_line.chars().count();
+                        app.input = new_first_line + &after;
+                        app.input_cursor = cursor_pos;
+                    } else {
+                        // Multi-line paste
+                        app.multiline_buffer.push(new_first_line);
+
+                        // Add middle lines
+                        for line in &lines[1..lines.len() - 1] {
+                            app.multiline_buffer.push(line.to_string());
+                        }
+
+                        // Last line becomes current input with remaining text
+                        let last_line = lines.last().unwrap_or(&"");
+                        app.input = format!("{}{}", last_line, after);
+                        app.input_cursor = last_line.chars().count();
+                    }
+                }
+            } else {
+                // Single line paste in multiline mode
+                app.input.insert_str(app.input_cursor, content);
+                app.input_cursor += content.chars().count();
+            }
+        }
+    }
 }
 
 /// Handle LLM streaming events
@@ -758,6 +1026,56 @@ async fn handle_llm_stream_event(
     }
 
     Ok(())
+}
+
+/// Format a user-friendly error message for streaming failures
+fn format_stream_error_message(err_text: &str, model: &str) -> String {
+    let mut msg = String::new();
+    msg.push_str("❌ Failed to stream from LLM.\n");
+
+    // Show a concise snippet of the original error
+    let snippet = if err_text.len() > 800 {
+        &err_text[..800]
+    } else {
+        err_text
+    };
+    msg.push_str(snippet);
+
+    let lower = err_text.to_lowercase();
+
+    // Avoid duplicating hints if backend already provided them
+    if !lower.contains("hint:") {
+        let mut hints: Vec<String> = Vec::new();
+
+        if lower.contains("401") || lower.contains("unauthorized") || lower.contains("api key") {
+            hints.push(
+                "Set OPENAI_API_KEY in your env or add it to ~/.config/sgpt_rs/.sgptrc".to_string(),
+            );
+        }
+        if (lower.contains("model")
+            && (lower.contains("not found")
+                || lower.contains("unknown")
+                || lower.contains("invalid")))
+            || lower.contains("unknown model")
+        {
+            hints.push(format!(
+                "Check --model (current: {model}) or set DEFAULT_MODEL in ~/.config/sgpt_rs/.sgptrc"
+            ));
+        }
+        if lower.contains("rate limit") || lower.contains("quota") {
+            hints.push("You may be rate limited; retry later or reduce concurrency".to_string());
+        }
+        if lower.contains("multimodal") || lower.contains("vision") || lower.contains("image") {
+            hints.push("Your provider may not support images/vision for this endpoint; try without image options or use a vision-capable model".to_string());
+        }
+
+        if !hints.is_empty() {
+            msg.push_str("\n💡 Hints: ");
+            msg.push_str(&hints.join("; "));
+        }
+    }
+
+    msg
 }
 
 /// Execute a command and capture its output
