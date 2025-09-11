@@ -97,7 +97,8 @@ pub struct ChatOptions {
     pub max_tokens: Option<u32>,
 }
 
-// New structures for Responses API
+// New structures for Responses API (feature-gated)
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 #[expect(dead_code)]
@@ -106,6 +107,7 @@ pub enum ResponseInput {
     Messages(Vec<ChatMessage>),
 }
 
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Clone)]
 pub struct ResponseOptions {
     pub model: String,
@@ -115,35 +117,32 @@ pub struct ResponseOptions {
     pub reasoning: Option<ReasoningOptions>,
 }
 
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Clone, Serialize)]
 pub struct ReasoningOptions {
     pub effort: String, // "low", "medium", "high"
 }
 
+#[cfg(feature = "responses-api")]
 impl ReasoningOptions {
     #[expect(dead_code)]
     pub fn low() -> Self {
-        Self {
-            effort: "low".to_string(),
-        }
+        Self { effort: "low".to_string() }
     }
 
     #[expect(dead_code)]
     pub fn medium() -> Self {
-        Self {
-            effort: "medium".to_string(),
-        }
+        Self { effort: "medium".to_string() }
     }
 
     #[expect(dead_code)]
     pub fn high() -> Self {
-        Self {
-            effort: "high".to_string(),
-        }
+        Self { effort: "high".to_string() }
     }
 }
 
-// Response structures
+// Response structures (feature-gated)
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
 pub struct ResponsesApiResponse {
@@ -155,6 +154,7 @@ pub struct ResponsesApiResponse {
     pub usage: Option<Usage>,
 }
 
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
 pub struct ResponseOutput {
@@ -164,6 +164,7 @@ pub struct ResponseOutput {
     pub content: Vec<OutputContent>,
 }
 
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
 pub struct OutputContent {
@@ -172,6 +173,7 @@ pub struct OutputContent {
     pub annotations: Vec<serde_json::Value>,
 }
 
+#[cfg(feature = "responses-api")]
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
 pub struct Usage {
@@ -365,6 +367,7 @@ pub struct LlmClient {
     api_key: Option<String>,
 }
 
+#[cfg(feature = "responses-api")]
 #[expect(dead_code)]
 impl ResponseOptions {
     pub fn new(model: String) -> Self {
@@ -400,6 +403,7 @@ impl ResponseOptions {
     }
 }
 
+#[cfg(feature = "responses-api")]
 #[expect(dead_code)]
 impl ResponsesApiResponse {
     /// Get the primary text output from the response
@@ -478,6 +482,7 @@ impl LlmClient {
     }
 
     /// Create a response using the Responses API (non-streaming)
+    #[cfg(feature = "responses-api")]
     pub async fn create_response(
         &self,
         input: ResponseInput,
@@ -576,6 +581,7 @@ impl LlmClient {
     }
 
     /// Convenience method for simple text input
+    #[cfg(feature = "responses-api")]
     #[expect(dead_code)]
     pub async fn generate_text(&self, input: &str, model: &str) -> Result<String> {
         let opts = ResponseOptions::new(model.to_string());
@@ -586,6 +592,7 @@ impl LlmClient {
     }
 
     /// Convenience method for text with instructions
+    #[cfg(feature = "responses-api")]
     #[expect(dead_code)]
     pub async fn generate_text_with_instructions(
         &self,
@@ -602,6 +609,7 @@ impl LlmClient {
     }
 
     /// Create a fake response for testing
+    #[cfg(feature = "responses-api")]
     fn fake_response(&self, input: ResponseInput, _opts: ResponseOptions) -> ResponsesApiResponse {
         let input_text = match input {
             ResponseInput::Text(text) => text,

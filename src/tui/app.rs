@@ -430,12 +430,7 @@ impl App {
         };
     }
 
-    /// Clear message queue
-    #[expect(dead_code)]
-    pub fn clear_queue(&mut self) {
-        self.message_queue.clear();
-        self.update_status_message();
-    }
+    
 
     /// Store collapsed paste content for potential expansion
     pub fn store_collapsed_paste_content(&mut self, content: String) {

@@ -147,35 +147,14 @@ where
     Ok(f())
 }
 
-/// Check if a file path has a PDF extension.
-///
-/// Performs a case-insensitive check for the .pdf file extension.
-///
-/// # Arguments
-///
-/// * `file_path` - Path to check
-///
-/// # Returns
-///
-/// * `bool` - true if the file has a .pdf extension, false otherwise
-///
-/// # Examples
-///
-/// ```rust
-/// use crate::utils::pdf::is_pdf_file;
-///
-/// assert!(is_pdf_file("document.pdf"));
-/// assert!(is_pdf_file("Document.PDF"));
-/// assert!(!is_pdf_file("document.txt"));
-/// ```
-#[allow(dead_code)]
-pub fn is_pdf_file(file_path: &str) -> bool {
-    file_path.to_lowercase().ends_with(".pdf")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Local helper used only by tests.
+    fn is_pdf_file(file_path: &str) -> bool {
+        file_path.to_lowercase().ends_with(".pdf")
+    }
 
     #[test]
     fn test_is_pdf_file() {

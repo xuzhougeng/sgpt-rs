@@ -5,6 +5,11 @@ edition = "2021"
 description = "ShellGPT Rust rewrite scaffold"
 license = "MIT"
 
+[features]
+# Default features keep the binary lean. Opt-in to Responses API scaffolding when needed.
+default = []
+responses-api = []
+
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5.4", features = ["derive"] }
