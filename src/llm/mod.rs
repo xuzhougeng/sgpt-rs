@@ -127,17 +127,23 @@ pub struct ReasoningOptions {
 impl ReasoningOptions {
     #[expect(dead_code)]
     pub fn low() -> Self {
-        Self { effort: "low".to_string() }
+        Self {
+            effort: "low".to_string(),
+        }
     }
 
     #[expect(dead_code)]
     pub fn medium() -> Self {
-        Self { effort: "medium".to_string() }
+        Self {
+            effort: "medium".to_string(),
+        }
     }
 
     #[expect(dead_code)]
     pub fn high() -> Self {
-        Self { effort: "high".to_string() }
+        Self {
+            effort: "high".to_string(),
+        }
     }
 }
 
@@ -729,8 +735,8 @@ impl LlmClient {
                 // Include provider error payload + actionable hints (e.g., tools 422) for easier debugging
                 let text = resp_opt.take().unwrap().text().await.unwrap_or_default();
                 let mut msg = String::new();
-                let snippet = if text.len() > 800 { &text[..800] } else { &text };
-                msg.push_str(snippet);
+                let snippet: String = text.chars().take(800).collect();
+                msg.push_str(&snippet);
 
                 let code = status.as_u16();
                 let lower = text.to_lowercase();

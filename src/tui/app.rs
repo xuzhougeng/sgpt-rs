@@ -43,7 +43,7 @@ pub struct App {
     pub messages: Vec<ChatMessage>,
     /// Input buffer
     pub input: String,
-    /// Cursor position in input (byte index)
+    /// Cursor position in input (character index)
     pub input_cursor: usize,
     /// Current input mode
     pub input_mode: InputMode,
@@ -240,7 +240,8 @@ impl App {
     }
 
     pub fn move_cursor_right(&mut self) {
-        if self.input_cursor < self.input.len() {
+        let total_chars = self.input.chars().count();
+        if self.input_cursor < total_chars {
             self.input_cursor += 1;
         }
     }
@@ -250,30 +251,40 @@ impl App {
     }
 
     pub fn move_cursor_end(&mut self) {
-        self.input_cursor = self.input.len();
+        self.input_cursor = self.input.chars().count();
     }
 
     pub fn insert_char(&mut self, c: char) {
-        if self.input_cursor >= self.input.len() {
+        let total_chars = self.input.chars().count();
+        if self.input_cursor >= total_chars {
             self.input.push(c);
-            self.input_cursor = self.input.len();
+            self.input_cursor = self.input.chars().count();
         } else {
-            self.input.insert(self.input_cursor, c);
+            let byte_idx =
+                crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
+            self.input.insert(byte_idx, c);
             self.input_cursor += 1;
         }
     }
 
     pub fn backspace(&mut self) {
-        if self.input_cursor > 0 && self.input_cursor <= self.input.len() {
-            self.input.remove(self.input_cursor - 1);
+        if self.input_cursor > 0 {
+            let del_char_pos = self.input_cursor - 1;
+            let byte_idx = crate::utils::unicode::char_to_byte_index(&self.input, del_char_pos);
+            self.input.remove(byte_idx);
             self.input_cursor -= 1;
-        } else if self.input_cursor == 0 && self.input_mode == InputMode::MultiLine && !self.multiline_buffer.is_empty() {
+        } else if self.input_cursor == 0
+            && self.input_mode == InputMode::MultiLine
+            && !self.multiline_buffer.is_empty()
+        {
             // At the beginning of current line in multiline mode, merge with previous line
             let previous_line = self.multiline_buffer.pop().unwrap();
             let current_line = self.input.clone();
+            let prev_chars = previous_line.chars().count();
             self.input = previous_line + &current_line;
-            self.input_cursor = self.input.len() - current_line.len();
-            
+            // place cursor right after the previous line content
+            self.input_cursor = prev_chars;
+
             // If multiline buffer is now empty, switch back to normal mode
             if self.multiline_buffer.is_empty() {
                 self.input_mode = InputMode::Normal;
@@ -282,8 +293,11 @@ impl App {
     }
 
     pub fn delete(&mut self) {
-        if self.input_cursor < self.input.len() {
-            self.input.remove(self.input_cursor);
+        let total_chars = self.input.chars().count();
+        if self.input_cursor < total_chars {
+            let byte_idx =
+                crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
+            self.input.remove(byte_idx);
         }
     }
 
@@ -416,7 +430,9 @@ impl App {
     fn update_status_message(&mut self) {
         self.status_message = if let Some(lang) = self.interpreter {
             match lang {
-                InterpreterType::Python => "Python REPL: e=execute, r=repeat | ctrl+h help".to_string(),
+                InterpreterType::Python => {
+                    "Python REPL: e=execute, r=repeat | ctrl+h help".to_string()
+                }
                 InterpreterType::R => "R REPL: e=execute, r=repeat | ctrl+h help".to_string(),
             }
         } else if self.is_shell_mode {
@@ -429,8 +445,6 @@ impl App {
             "Chat Mode | ctrl+h help".to_string()
         };
     }
-
-    
 
     /// Store collapsed paste content for potential expansion
     pub fn store_collapsed_paste_content(&mut self, content: String) {
@@ -450,7 +464,7 @@ impl App {
                 let after = self.input[pattern_end..].to_string();
 
                 let new_input = format!("{}{}{}", before, stored_content, after);
-                let new_cursor = (before.len() + stored_content.len()).min(new_input.len());
+                let new_cursor = before.chars().count() + stored_content.chars().count();
 
                 self.input = new_input;
                 self.input_cursor = new_cursor;
@@ -463,7 +477,7 @@ impl App {
                     if parts.len() > 1 {
                         self.multiline_buffer = parts[..parts.len() - 1].to_vec();
                         self.input = parts.last().unwrap_or(&String::new()).clone();
-                        self.input_cursor = self.input.len();
+                        self.input_cursor = self.input.chars().count();
                         self.input_mode = InputMode::MultiLine;
                     }
                 }
@@ -498,5 +512,48 @@ impl App {
         self.last_ctrl_c_time = Some(now);
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::{ChatMessage, Role};
+
+    fn new_empty_app() -> App {
+        App::new(
+            "test".to_string(),
+            vec![ChatMessage::new(Role::System, "test".to_string())],
+            false,
+            false,
+            "gpt-4o".to_string(),
+            None,
+        )
+    }
+
+    #[test]
+    fn cjk_insert_backspace_delete_are_safe() {
+        let mut app = new_empty_app();
+
+        app.insert_char('徐');
+        app.insert_char('洲');
+        app.insert_char('更');
+        assert_eq!(app.input, "徐洲更");
+        assert_eq!(app.input_cursor, 3);
+
+        // Move left and backspace one char (should remove '个')
+        app.move_cursor_left(); // cursor at 2
+        app.backspace(); // remove at 1
+        assert_eq!(app.input, "徐更");
+        assert_eq!(app.input_cursor, 1);
+
+        // Delete at cursor (should remove '发')
+        app.delete();
+        assert_eq!(app.input, "徐");
+        assert_eq!(app.input_cursor, 1);
+
+        // Ensure no panic and cursor end works
+        app.move_cursor_end();
+        assert_eq!(app.input_cursor, app.input.chars().count());
     }
 }

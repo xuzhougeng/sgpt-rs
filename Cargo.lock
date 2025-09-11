@@ -1745,7 +1745,7 @@ dependencies = [
 
 [[package]]
 name = "sgpt"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1766,6 +1766,7 @@ dependencies = [
  "tempfile",
  "termimad",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]

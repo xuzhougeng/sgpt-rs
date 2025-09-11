@@ -1,6 +1,6 @@
 [package]
 name = "sgpt"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 description = "ShellGPT Rust rewrite scaffold"
 license = "MIT"
@@ -30,3 +30,4 @@ pdf-extract = "0.7"
 tempfile = "3.0"
 ratatui = "0.28"
 crossterm = "0.28"
+unicode-width = "0.1"

@@ -5,10 +5,9 @@ use std::time::Duration;
 
 use anyhow::Result;
 use crossterm::event::{
-    self,
-    DisableBracketedPaste, EnableBracketedPaste,
-    Event, KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseEventKind,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyModifiers,
+    KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
 };
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -646,7 +645,8 @@ async fn handle_key_event(
                                 code: app.last_command.clone(),
                             });
                         } else {
-                            let _ = event_tx.send(TuiEvent::ExecuteCommand(app.last_command.clone()));
+                            let _ =
+                                event_tx.send(TuiEvent::ExecuteCommand(app.last_command.clone()));
                         }
                         app.clear_input();
                         return Ok(false);
@@ -788,7 +788,8 @@ async fn handle_key_event(
                             return Ok(false);
                         }
                         "d" if !app.last_command.is_empty() => {
-                            let _ = event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
+                            let _ =
+                                event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
                             app.clear_input();
                             return Ok(false);
                         }
@@ -942,15 +943,19 @@ fn app_paste_text(app: &mut App, content: &str) {
                     }
                     // Set the last line as current input
                     app.input = lines.last().unwrap_or(&String::new()).clone();
-                    app.input_cursor = app.input.len();
+                    app.input_cursor = app.input.chars().count();
                 } else {
                     // Single line, just insert normally
-                    app.input.insert_str(app.input_cursor, content);
+                    let byte_idx =
+                        crate::utils::unicode::char_to_byte_index(&app.input, app.input_cursor);
+                    app.input.insert_str(byte_idx, content);
                     app.input_cursor += content.chars().count();
                 }
             } else {
                 // Single line paste in normal mode
-                app.input.insert_str(app.input_cursor, content);
+                let byte_idx =
+                    crate::utils::unicode::char_to_byte_index(&app.input, app.input_cursor);
+                app.input.insert_str(byte_idx, content);
                 app.input_cursor += content.chars().count();
             }
         }
@@ -986,7 +991,9 @@ fn app_paste_text(app: &mut App, content: &str) {
                 }
             } else {
                 // Single line paste in multiline mode
-                app.input.insert_str(app.input_cursor, content);
+                let byte_idx =
+                    crate::utils::unicode::char_to_byte_index(&app.input, app.input_cursor);
+                app.input.insert_str(byte_idx, content);
                 app.input_cursor += content.chars().count();
             }
         }
@@ -1034,12 +1041,8 @@ fn format_stream_error_message(err_text: &str, model: &str) -> String {
     msg.push_str("❌ Failed to stream from LLM.\n");
 
     // Show a concise snippet of the original error
-    let snippet = if err_text.len() > 800 {
-        &err_text[..800]
-    } else {
-        err_text
-    };
-    msg.push_str(snippet);
+    let snippet = err_text.chars().take(800).collect::<String>();
+    msg.push_str(&snippet);
 
     let lower = err_text.to_lowercase();
 

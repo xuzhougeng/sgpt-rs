@@ -28,9 +28,9 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),              // Chat area
+            Constraint::Min(3),               // Chat area
             Constraint::Length(input_height), // Input area (dynamic)
-            Constraint::Length(1),           // Status bar
+            Constraint::Length(1),            // Status bar
         ])
         .split(area);
 
@@ -156,17 +156,59 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Render the input area
 fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
+    use unicode_width::UnicodeWidthChar;
+
+    // Helper: compute display width (terminal columns) up to n characters
+    fn display_width_of_prefix(s: &str, chars: usize) -> usize {
+        s.chars()
+            .take(chars)
+            .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+            .sum()
+    }
+
+    // Helper: slice string by display columns [start_col, start_col + max_cols)
+    fn slice_by_display_cols(s: &str, start_col: usize, max_cols: usize) -> String {
+        if max_cols == 0 {
+            return String::new();
+        }
+        let mut cols = 0usize;
+        let mut acc = 0usize;
+        let mut out = String::new();
+        // Skip until reaching start_col
+        let mut iter = s.chars().peekable();
+        while let Some(&c) = iter.peek() {
+            let w = UnicodeWidthChar::width(c).unwrap_or(0);
+            if acc + w > start_col {
+                break;
+            }
+            acc += w;
+            iter.next();
+        }
+        // Take up to max_cols columns
+        while let Some(&c) = iter.peek() {
+            let w = UnicodeWidthChar::width(c).unwrap_or(0);
+            if cols + w > max_cols {
+                break;
+            }
+            out.push(c);
+            cols += w;
+            iter.next();
+        }
+        out
+    }
     // Compute lines for rendering
     let (lines, cursor_line_idx, cursor_col) = match app.input_mode {
         InputMode::Normal => {
             let l = vec![app.input.clone()];
-            (l, 0usize, app.input_cursor.min(app.input.len()))
+            let max_chars = app.input.chars().count();
+            (l, 0usize, app.input_cursor.min(max_chars))
         }
         InputMode::MultiLine => {
             let mut l = app.multiline_buffer.clone();
             l.push(app.input.clone());
             let idx = l.len().saturating_sub(1);
-            (l, idx, app.input_cursor.min(app.input.len()))
+            let max_chars = app.input.chars().count();
+            (l, idx, app.input_cursor.min(max_chars))
         }
     };
 
@@ -175,7 +217,7 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
         InputMode::MultiLine => "Multi-line Input",
     };
 
-    // Horizontal scrolling: clamp each line to visible width; for current line ensure cursor is visible
+    // Horizontal scrolling: clamp each line to visible width (columns); for current line ensure cursor is visible
     let inner_width = area.width.saturating_sub(2) as usize; // account for borders
     let mut visible_lines: Vec<String> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
@@ -184,20 +226,15 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
             continue;
         }
         if i == cursor_line_idx {
-            let cur = cursor_col.min(line.len());
-            let start = if cur >= inner_width {
-                cur + 1 - inner_width
-            } else {
-                0
-            };
-            let slice = line
-                .chars()
-                .skip(start)
-                .take(inner_width)
-                .collect::<String>();
+            // Convert cursor char index to display columns
+            let cursor_cols = display_width_of_prefix(line, cursor_col);
+            // Ensure cursor is visible within inner_width columns
+            let start_col = cursor_cols.saturating_sub(inner_width.saturating_sub(1));
+            let slice = slice_by_display_cols(line, start_col, inner_width);
             visible_lines.push(slice);
         } else {
-            let slice = line.chars().take(inner_width).collect::<String>();
+            // Take up to inner_width columns
+            let slice = slice_by_display_cols(line, 0, inner_width);
             visible_lines.push(slice);
         }
     }
@@ -226,16 +263,15 @@ fn render_input_area(frame: &mut Frame, app: &App, area: Rect) {
     let inner_y = area.y.saturating_add(1);
     let inner_height = area.height.saturating_sub(2) as usize;
 
-    // Determine rendered cursor x based on horizontal scroll
+    // Determine rendered cursor x based on horizontal scroll (column width aware)
     let x_off = if inner_width == 0 {
         0
     } else {
-        let start = if cursor_col >= inner_width {
-            cursor_col + 1 - inner_width
-        } else {
-            0
-        };
-        (cursor_col - start).min(inner_width - 1)
+        let current_line = &lines[cursor_line_idx];
+        let cursor_cols = display_width_of_prefix(current_line, cursor_col);
+        let start_col = cursor_cols.saturating_sub(inner_width.saturating_sub(1));
+        let rel_cols = cursor_cols.saturating_sub(start_col).min(inner_width - 1);
+        rel_cols
     } as u16;
 
     let y_off = match app.input_mode {
@@ -271,14 +307,12 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    spans.push(
-        Span::styled(
-            base_text,
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-    );
+    spans.push(Span::styled(
+        base_text,
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    ));
 
     let line = Line::from(spans);
     let status_paragraph = Paragraph::new(line).style(Style::default().bg(Color::DarkGray));
@@ -299,7 +333,9 @@ fn render_help_overlay(frame: &mut Frame, app: &App) {
         vec![
             Line::from("Shell REPL Help (Ctrl+H to close)"),
             Line::from(""),
-            Line::from("Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline"),
+            Line::from(
+                "Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline",
+            ),
             Line::from("↑/↓ = Scroll    | Ctrl+↑/↓ = Scroll chat"),
             Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help"),
             Line::from("e = Execute last | r = Repeat | d = Describe | exit() = Quit REPL"),
@@ -308,7 +344,9 @@ fn render_help_overlay(frame: &mut Frame, app: &App) {
         vec![
             Line::from("Help (Ctrl+H to close)"),
             Line::from(""),
-            Line::from("Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline"),
+            Line::from(
+                "Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline",
+            ),
             Line::from("↑/↓ = History    | Ctrl+↑/↓ = Scroll chat"),
             Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help"),
         ]
