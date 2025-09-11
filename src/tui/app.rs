@@ -320,6 +320,7 @@ impl App {
     }
 
     /// Clear message queue
+    #[expect(dead_code)]
     pub fn clear_queue(&mut self) {
         self.message_queue.clear();
         self.update_status_message();

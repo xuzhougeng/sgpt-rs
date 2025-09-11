@@ -832,6 +832,7 @@ fn sanitize_generated_code(s: &str) -> String {
 }
 
 /// Generate real command description using AI (non-streaming, kept for compatibility)
+#[expect(dead_code)]
 async fn generate_real_command_description(command: &str, model: &str) -> Result<String> {
     use crate::config::Config;
     use crate::role::{default_role_text, DefaultRole};

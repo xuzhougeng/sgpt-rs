@@ -100,6 +100,7 @@ pub struct ChatOptions {
 // New structures for Responses API
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
+#[expect(dead_code)]
 pub enum ResponseInput {
     Text(String),
     Messages(Vec<ChatMessage>),
@@ -120,18 +121,21 @@ pub struct ReasoningOptions {
 }
 
 impl ReasoningOptions {
+    #[expect(dead_code)]
     pub fn low() -> Self {
         Self {
             effort: "low".to_string(),
         }
     }
 
+    #[expect(dead_code)]
     pub fn medium() -> Self {
         Self {
             effort: "medium".to_string(),
         }
     }
 
+    #[expect(dead_code)]
     pub fn high() -> Self {
         Self {
             effort: "high".to_string(),
@@ -141,6 +145,7 @@ impl ReasoningOptions {
 
 // Response structures
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 pub struct ResponsesApiResponse {
     pub id: String,
     pub object: String,
@@ -151,6 +156,7 @@ pub struct ResponsesApiResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 pub struct ResponseOutput {
     pub id: String,
     pub r#type: String,
@@ -159,6 +165,7 @@ pub struct ResponseOutput {
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 pub struct OutputContent {
     pub r#type: String,
     pub text: Option<String>,
@@ -166,6 +173,7 @@ pub struct OutputContent {
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -196,6 +204,7 @@ impl MessageContent {
     }
 
     /// Get text content if it's a text message
+    #[expect(dead_code)]
     pub fn as_text(&self) -> Option<&str> {
         match self {
             MessageContent::Text(text) => Some(text),
@@ -226,6 +235,7 @@ impl ContentPart {
     }
 
     /// Create an image content part from URL
+    #[expect(dead_code)]
     pub fn image_url(url: impl Into<String>, detail: Option<String>) -> Self {
         ContentPart::ImageUrl {
             image_url: ImageUrl {
@@ -293,6 +303,7 @@ impl ChatMessage {
     }
 
     /// Add an image from file path to the message
+    #[expect(dead_code)]
     pub fn with_image(mut self, image_path: &str, detail: Option<String>) -> Result<Self> {
         let image_part = ContentPart::image_from_file(image_path, detail)?;
 
@@ -311,6 +322,7 @@ impl ChatMessage {
     }
 
     /// Get text content from the message
+    #[expect(dead_code)]
     pub fn get_text(&self) -> String {
         self.content.extract_text()
     }
@@ -353,6 +365,7 @@ pub struct LlmClient {
     api_key: Option<String>,
 }
 
+#[expect(dead_code)]
 impl ResponseOptions {
     pub fn new(model: String) -> Self {
         Self {
@@ -387,6 +400,7 @@ impl ResponseOptions {
     }
 }
 
+#[expect(dead_code)]
 impl ResponsesApiResponse {
     /// Get the primary text output from the response
     pub fn get_text(&self) -> Option<&str> {
@@ -562,6 +576,7 @@ impl LlmClient {
     }
 
     /// Convenience method for simple text input
+    #[expect(dead_code)]
     pub async fn generate_text(&self, input: &str, model: &str) -> Result<String> {
         let opts = ResponseOptions::new(model.to_string());
         let response = self
@@ -571,6 +586,7 @@ impl LlmClient {
     }
 
     /// Convenience method for text with instructions
+    #[expect(dead_code)]
     pub async fn generate_text_with_instructions(
         &self,
         input: &str,

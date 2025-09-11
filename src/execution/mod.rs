@@ -10,5 +10,6 @@ pub struct ExecutionResult {
     pub output: String,
     pub errors: Vec<String>,
     pub variables: HashMap<String, String>,
+    #[expect(dead_code)]
     pub plots: Vec<String>,
 }

@@ -7,6 +7,7 @@ use crossterm::event::{KeyEvent, MouseEvent};
 
 /// Events that can occur in the TUI application
 #[derive(Debug)]
+#[expect(dead_code)]
 pub enum TuiEvent {
     /// User keyboard input
     Key(KeyEvent),
