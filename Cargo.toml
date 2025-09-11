@@ -1,6 +1,6 @@
 [package]
 name = "sgpt"
-version = "0.1.2"
+version = "0.4.2"
 edition = "2021"
 description = "ShellGPT Rust rewrite scaffold"
 license = "MIT"
