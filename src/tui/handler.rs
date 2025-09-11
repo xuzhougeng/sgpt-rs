@@ -377,14 +377,30 @@ while True:
                 }
                 TuiEvent::DescribeCommand(cmd) => {
                     // Generate description using fake model or real describe function
-                    let description = if app.model == "fake" {
-                        generate_fake_command_description(&cmd)
+                    if app.model == "fake" {
+                        let description = generate_fake_command_description(&cmd);
+                        app.show_description(cmd, description);
                     } else {
-                        // For real models, we could capture describe output here
-                        // For now, just show a placeholder
-                        "Command description would appear here in real mode.".to_string()
-                    };
-                    app.show_description(cmd, description);
+                        // For real models, start streaming description
+                        let _ = event_tx.send(TuiEvent::StartStreamingDescription(cmd.clone()));
+                        
+                        let cmd_clone = cmd.clone();
+                        let model_clone = app.model.clone();
+                        let tx = event_tx.clone();
+                        tokio::spawn(async move {
+                            match generate_streaming_command_description(&cmd_clone, &model_clone, tx.clone()).await {
+                                Ok(_) => {
+                                    let _ = tx.send(TuiEvent::DescriptionStreamFinished);
+                                }
+                                Err(_) => {
+                                    let _ = tx.send(TuiEvent::DescriptionContent(
+                                        format!("Failed to generate description for: {}", cmd_clone)
+                                    ));
+                                    let _ = tx.send(TuiEvent::DescriptionStreamFinished);
+                                }
+                            }
+                        });
+                    }
                 }
                 TuiEvent::ExecuteCode { language, code } => {
                     match language {
@@ -428,6 +444,18 @@ while True:
                 }
                 TuiEvent::VariablesSnapshot(text) => {
                     app.add_message(ChatMessage { role: Role::Assistant, content: text, name: None, tool_calls: None });
+                }
+                TuiEvent::CommandDescription { command, description } => {
+                    app.show_description(command, description);
+                }
+                TuiEvent::StartStreamingDescription(command) => {
+                    app.start_streaming_description(command);
+                }
+                TuiEvent::DescriptionContent(content) => {
+                    app.append_description_content(&content);
+                }
+                TuiEvent::DescriptionStreamFinished => {
+                    app.finish_streaming_description();
                 }
                 _ => {} // Handle other events as needed
             }
@@ -713,6 +741,112 @@ fn sanitize_generated_code(s: &str) -> String {
         return trimmed.to_string();
     }
     trimmed.to_string()
+}
+
+/// Generate real command description using AI (non-streaming, kept for compatibility)
+async fn generate_real_command_description(
+    command: &str,
+    model: &str,
+) -> Result<String> {
+    use crate::role::{default_role_text, DefaultRole};
+    use crate::config::Config;
+    
+    let cfg = Config::load();
+    let client = LlmClient::from_config(&cfg)?;
+    let role_text = default_role_text(&cfg, DefaultRole::DescribeShell);
+
+    let messages = vec![
+        ChatMessage {
+            role: Role::System,
+            content: role_text,
+            name: None,
+            tool_calls: None,
+        },
+        ChatMessage {
+            role: Role::User,
+            content: command.to_string(),
+            name: None,
+            tool_calls: None,
+        },
+    ];
+    
+    let opts = ChatOptions {
+        model: model.to_string(),
+        temperature: 0.1, // Lower temperature for more consistent descriptions
+        top_p: 1.0,
+        tools: None,
+        parallel_tool_calls: false,
+        tool_choice: None,
+        max_tokens: Some(500), // Limit description length
+    };
+
+    let mut stream = client.chat_stream(messages, opts);
+    let mut description = String::new();
+    
+    while let Some(event) = stream.next().await {
+        match event? {
+            StreamEvent::Content(content) => {
+                description.push_str(&content);
+            }
+            StreamEvent::Done => break,
+            _ => {}
+        }
+    }
+    
+    Ok(description.trim().to_string())
+}
+
+/// Generate streaming command description using AI
+async fn generate_streaming_command_description(
+    command: &str,
+    model: &str,
+    event_sender: mpsc::UnboundedSender<TuiEvent>,
+) -> Result<()> {
+    use crate::role::{default_role_text, DefaultRole};
+    use crate::config::Config;
+    
+    let cfg = Config::load();
+    let client = LlmClient::from_config(&cfg)?;
+    let role_text = default_role_text(&cfg, DefaultRole::DescribeShell);
+
+    let messages = vec![
+        ChatMessage {
+            role: Role::System,
+            content: role_text,
+            name: None,
+            tool_calls: None,
+        },
+        ChatMessage {
+            role: Role::User,
+            content: command.to_string(),
+            name: None,
+            tool_calls: None,
+        },
+    ];
+    
+    let opts = ChatOptions {
+        model: model.to_string(),
+        temperature: 0.1, // Lower temperature for more consistent descriptions
+        top_p: 1.0,
+        tools: None,
+        parallel_tool_calls: false,
+        tool_choice: None,
+        max_tokens: Some(500), // Limit description length
+    };
+
+    let mut stream = client.chat_stream(messages, opts);
+    
+    while let Some(event) = stream.next().await {
+        match event? {
+            StreamEvent::Content(content) => {
+                let _ = event_sender.send(TuiEvent::DescriptionContent(content));
+            }
+            StreamEvent::Done => break,
+            _ => {}
+        }
+    }
+    
+    Ok(())
 }
 
 /// Generate fake command descriptions for testing

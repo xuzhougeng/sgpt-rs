@@ -26,6 +26,12 @@ pub enum PopupState {
         command: String,
         description: String,
     },
+    /// Streaming description popup (shows loading state and streams content)
+    StreamingDescription {
+        command: String,
+        current_description: String,
+        is_loading: bool,
+    },
 }
 
 /// Application state for the TUI
@@ -190,47 +196,6 @@ impl App {
         self.show_help = !self.show_help;
     }
 
-    /// Calculate total number of display lines
-    pub fn calculate_total_lines(&self, available_width: usize) -> usize {
-        let mut total_lines = 0;
-        let visible_msgs = self.visible_messages();
-        
-        for msg in visible_msgs {
-            let prefix = match msg.role {
-                Role::User => ">>> ",
-                Role::Assistant => "",
-                Role::System => "SYS ",
-                Role::Tool => "TOOL ",
-            };
-            let content = format!("{}{}", prefix, msg.content);
-            
-            for line in content.lines() {
-                if line.len() <= available_width {
-                    total_lines += 1;
-                } else {
-                    total_lines += (line.len() + available_width - 1) / available_width; // Ceiling division
-                }
-            }
-            
-            if !content.is_empty() {
-                total_lines += 1; // Empty line between messages
-            }
-        }
-        
-        // Add current response lines if streaming
-        if self.is_receiving_response && !self.current_response.is_empty() {
-            for line in self.current_response.lines() {
-                if line.len() <= available_width {
-                    total_lines += 1;
-                } else {
-                    total_lines += (line.len() + available_width - 1) / available_width;
-                }
-            }
-        }
-        
-        total_lines
-    }
-
     /// Scroll chat history up (show older messages) - now line-based
     pub fn scroll_up(&mut self) {
         // Scroll up by one line at a time, but we need terminal dimensions
@@ -262,6 +227,35 @@ impl App {
             command,
             description,
         };
+    }
+
+    /// Start streaming description popup
+    pub fn start_streaming_description(&mut self, command: String) {
+        self.popup_state = PopupState::StreamingDescription {
+            command,
+            current_description: String::new(),
+            is_loading: true,
+        };
+    }
+
+    /// Append content to streaming description
+    pub fn append_description_content(&mut self, content: &str) {
+        if let PopupState::StreamingDescription { current_description, is_loading, .. } = &mut self.popup_state {
+            current_description.push_str(content);
+            *is_loading = false; // Mark as no longer loading once we start receiving content
+        }
+    }
+
+    /// Finish streaming description
+    pub fn finish_streaming_description(&mut self) {
+        if let PopupState::StreamingDescription { command, current_description, .. } = &self.popup_state {
+            let final_description = current_description.clone();
+            let final_command = command.clone();
+            self.popup_state = PopupState::Description {
+                command: final_command,
+                description: final_description,
+            };
+        }
     }
 
     /// Hide any popup

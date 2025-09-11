@@ -47,6 +47,13 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
         } => {
             render_description_popup(frame, command, description);
         }
+        PopupState::StreamingDescription {
+            command,
+            current_description,
+            is_loading,
+        } => {
+            render_streaming_description_popup(frame, command, current_description, *is_loading);
+        }
         PopupState::None => {}
     }
 }
@@ -309,6 +316,83 @@ fn render_execution_result_popup(frame: &mut Frame, command: &str, output: &str)
 
     // Render instructions
     let instructions = Paragraph::new("Press any key to close")
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(instructions, popup_layout[2]);
+}
+
+/// Render streaming command description popup
+fn render_streaming_description_popup(frame: &mut Frame, command: &str, current_description: &str, is_loading: bool) {
+    let area = frame.area();
+
+    // Create centered popup area
+    let popup_area = centered_rect(85, 75, area);
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Split the popup into command and description sections
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Command section
+            Constraint::Min(5),    // Description section
+            Constraint::Length(2), // Instructions
+        ])
+        .split(popup_area);
+
+    // Render command
+    let command_paragraph = Paragraph::new(format!("Command: {command}"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Command")
+                .title_style(
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        )
+        .wrap(Wrap { trim: true });
+    frame.render_widget(command_paragraph, popup_layout[0]);
+
+    // Render description (streaming or completed)
+    let description_text = if is_loading && current_description.is_empty() {
+        "Generating description..."
+    } else if current_description.is_empty() {
+        "No description available"
+    } else {
+        current_description
+    };
+    
+    let title = if is_loading && !current_description.is_empty() {
+        "Description (streaming...)"
+    } else {
+        "Description"
+    };
+    
+    let description_paragraph = Paragraph::new(description_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .title_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        )
+        .wrap(Wrap { trim: true });
+    frame.render_widget(description_paragraph, popup_layout[1]);
+
+    // Render instructions
+    let instructions_text = if is_loading {
+        "Generating... Press any key to close when done"
+    } else {
+        "Press any key to close"
+    };
+    
+    let instructions = Paragraph::new(instructions_text)
         .style(Style::default().fg(Color::Yellow))
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(instructions, popup_layout[2]);
