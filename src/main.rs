@@ -82,6 +82,27 @@ async fn main() -> Result<()> {
         prompt = utils::combine_doc_and_prompt(&doc_content, &prompt);
     }
 
+    // Process image files if --image is provided
+    let image_parts = if !args.image.is_empty() {
+        // Check if images were provided but warn about potential compatibility
+        let mut parts = Vec::new();
+        for image_path in &args.image {
+            match llm::ContentPart::image_from_file(image_path, Some("high".to_string())) {
+                Ok(part) => parts.push(part),
+                Err(e) => {
+                    return Err(anyhow!(
+                        "Image processing failed for '{}': {}",
+                        image_path,
+                        e
+                    ))
+                }
+            }
+        }
+        Some(parts)
+    } else {
+        None
+    };
+
     // Compute markdown preference early for show_chat
     let md_for_show = if args.no_md {
         false
@@ -128,6 +149,7 @@ async fn main() -> Result<()> {
                     llm::Role::User => "user",
                     llm::Role::Assistant => "assistant",
                     llm::Role::Tool => "tool",
+                    llm::Role::Developer => "developer",
                 };
                 md_text.push_str(&format!("### {}\n\n{}\n\n", role, m.content));
             }
@@ -139,12 +161,14 @@ async fn main() -> Result<()> {
                     llm::Role::User => ("user", "magenta"),
                     llm::Role::Assistant => ("assistant", "green"),
                     llm::Role::Tool => ("tool", "yellow"),
+                    llm::Role::Developer => ("developer", "blue"),
                 };
                 let header = match color {
                     "cyan" => format!("{}", role.cyan()),
                     "magenta" => format!("{}", role.magenta()),
                     "green" => format!("{}", role.green()),
                     "yellow" => format!("{}", role.yellow()),
+                    "blue" => format!("{}", role.blue()),
                     _ => role.to_string(),
                 };
                 println!("{}: {}\n", header, m.content);
@@ -251,6 +275,7 @@ async fn main() -> Result<()> {
                 md_for_show,
                 functions,
                 args.role.as_deref(),
+                image_parts.clone(),
             )
             .await
         }
@@ -303,6 +328,7 @@ async fn main() -> Result<()> {
                     args.max_tokens,
                     no_interact,
                     explicit_no_interact,
+                    image_parts.clone(),
                 )
                 .await
             } else if args.describe_shell {
@@ -313,6 +339,7 @@ async fn main() -> Result<()> {
                     args.top_p,
                     md,
                     args.max_tokens,
+                    image_parts.clone(),
                 )
                 .await
             } else if args.code {
@@ -322,6 +349,7 @@ async fn main() -> Result<()> {
                     args.temperature,
                     args.top_p,
                     args.max_tokens,
+                    image_parts.clone(),
                 )
                 .await
             } else {
@@ -335,6 +363,7 @@ async fn main() -> Result<()> {
                     md,
                     functions,
                     args.role.as_deref(),
+                    image_parts.clone(),
                 )
                 .await
             }

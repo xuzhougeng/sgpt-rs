@@ -90,6 +90,12 @@ pub struct Cli {
     #[arg(long = "doc", action = clap::ArgAction::Append)]
     pub doc: Vec<String>,
 
+    /// Process image files and include them in the conversation.
+    /// Can be used multiple times: --image photo1.jpg --image diagram.png
+    /// Supports: .jpg, .jpeg, .png, .gif, .webp, .bmp
+    #[arg(long = "image", action = clap::ArgAction::Append)]
+    pub image: Vec<String>,
+
     /// Enable function calls (disabled by default).
     #[arg(long)]
     pub functions: bool,

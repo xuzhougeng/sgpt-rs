@@ -17,25 +17,22 @@ pub async fn run(
     top_p: f32,
     markdown: bool,
     max_tokens: Option<u32>,
+    image_parts: Option<Vec<crate::llm::ContentPart>>,
 ) -> Result<()> {
     let cfg = Config::load();
     let client = LlmClient::from_config(&cfg)?;
     let role_text = default_role_text(&cfg, DefaultRole::DescribeShell);
 
-    let messages = vec![
-        ChatMessage {
-            role: Role::System,
-            content: role_text,
-            name: None,
-            tool_calls: None,
-        },
-        ChatMessage {
-            role: Role::User,
-            content: prompt.to_string(),
-            name: None,
-            tool_calls: None,
-        },
-    ];
+    // Create user message with optional images
+    let user_message = match image_parts {
+        Some(mut parts) => {
+            parts.insert(0, crate::llm::ContentPart::text(prompt.to_string()));
+            ChatMessage::multimodal(Role::User, parts)
+        }
+        None => ChatMessage::new(Role::User, prompt.to_string()),
+    };
+
+    let messages = vec![ChatMessage::new(Role::System, role_text), user_message];
     let opts = ChatOptions {
         model: model.to_string(),
         temperature,

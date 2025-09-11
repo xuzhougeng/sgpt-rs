@@ -116,18 +116,8 @@ Guidelines:
         );
 
         let messages = vec![
-            ChatMessage {
-                role: Role::System,
-                content: system_prompt.to_string(),
-                name: None,
-                tool_calls: None,
-            },
-            ChatMessage {
-                role: Role::User,
-                content: user_message,
-                name: None,
-                tool_calls: None,
-            },
+            ChatMessage::new(Role::System, system_prompt.to_string()),
+            ChatMessage::new(Role::User, user_message),
         ];
 
         let opts = ChatOptions {
@@ -268,18 +258,8 @@ Guidelines:
         );
 
         let messages = vec![
-            ChatMessage {
-                role: Role::System,
-                content: system_prompt.to_string(),
-                name: None,
-                tool_calls: None,
-            },
-            ChatMessage {
-                role: Role::User,
-                content: user_message,
-                name: None,
-                tool_calls: None,
-            },
+            ChatMessage::new(Role::System, system_prompt.to_string()),
+            ChatMessage::new(Role::User, user_message),
         ];
 
         let opts = ChatOptions {

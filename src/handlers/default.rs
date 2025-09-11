@@ -21,6 +21,7 @@ pub async fn run(
     markdown: bool,
     allow_functions: bool,
     role_name: Option<&str>,
+    image_parts: Option<Vec<crate::llm::ContentPart>>,
 ) -> Result<()> {
     let cfg = Config::load();
     let client = LlmClient::from_config(&cfg)?;
@@ -29,20 +30,16 @@ pub async fn run(
     let registry = Registry::load(&cfg)?;
     let system_text = resolve_role_text(&cfg, role_name, DefaultRole::Default);
 
-    let mut messages = vec![
-        ChatMessage {
-            role: Role::System,
-            content: system_text,
-            name: None,
-            tool_calls: None,
-        },
-        ChatMessage {
-            role: Role::User,
-            content: prompt.to_string(),
-            name: None,
-            tool_calls: None,
-        },
-    ];
+    // Create user message with optional images
+    let user_message = match image_parts {
+        Some(mut parts) => {
+            parts.insert(0, crate::llm::ContentPart::text(prompt.to_string()));
+            ChatMessage::multimodal(Role::User, parts)
+        }
+        None => ChatMessage::new(Role::User, prompt.to_string()),
+    };
+
+    let mut messages = vec![ChatMessage::new(Role::System, system_text), user_message];
     let mut opts = ChatOptions {
         model: model.to_string(),
         temperature,
@@ -111,30 +108,24 @@ pub async fn run(
     if saw_tool_calls {
         if let Some(name) = tool_name.clone() {
             // append assistant tool_calls message
-            messages.push(ChatMessage {
-                role: Role::Assistant,
-                content: String::new(),
-                name: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: None,
-                    r#type: "function".into(),
-                    function: FunctionCall {
-                        name: name.clone(),
-                        arguments: tool_args.clone(),
-                    },
-                }]),
-            });
+            let mut assistant_msg = ChatMessage::new(Role::Assistant, String::new());
+            assistant_msg.tool_calls = Some(vec![ToolCall {
+                id: None,
+                r#type: "function".into(),
+                function: FunctionCall {
+                    name: name.clone(),
+                    arguments: tool_args.clone(),
+                },
+            }]);
+            messages.push(assistant_msg);
             // execute tool
             let result = registry
                 .execute(&name, &tool_args)
                 .await
                 .unwrap_or_else(|e| format!("tool error: {}", e));
-            messages.push(ChatMessage {
-                role: Role::Tool,
-                content: result,
-                name: Some(name),
-                tool_calls: None,
-            });
+            let mut tool_msg = ChatMessage::new(Role::Tool, result);
+            tool_msg.name = Some(name);
+            messages.push(tool_msg);
             // second call without caching
             assistant_text.clear();
             tool_args.clear();

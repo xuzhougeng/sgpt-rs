@@ -87,7 +87,9 @@ impl App {
     ) -> Self {
         let status_message = if let Some(lang) = interpreter {
             match lang {
-                InterpreterType::Python => "Python REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
+                InterpreterType::Python => {
+                    "Python REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help"
+                }
                 InterpreterType::R => "R REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
             }
         } else if is_shell_mode {
@@ -158,12 +160,7 @@ impl App {
     pub fn finish_response(&mut self) -> Result<()> {
         if !self.current_response.is_empty() {
             let response = self.current_response.clone();
-            self.add_message(ChatMessage {
-                role: Role::Assistant,
-                content: response,
-                name: None,
-                tool_calls: None,
-            });
+            self.add_message(ChatMessage::new(Role::Assistant, response));
 
             if self.is_shell_mode || self.interpreter.is_some() {
                 self.last_command = self.current_response.trim().to_string();
@@ -240,7 +237,12 @@ impl App {
 
     /// Append content to streaming description
     pub fn append_description_content(&mut self, content: &str) {
-        if let PopupState::StreamingDescription { current_description, is_loading, .. } = &mut self.popup_state {
+        if let PopupState::StreamingDescription {
+            current_description,
+            is_loading,
+            ..
+        } = &mut self.popup_state
+        {
             current_description.push_str(content);
             *is_loading = false; // Mark as no longer loading once we start receiving content
         }
@@ -248,7 +250,12 @@ impl App {
 
     /// Finish streaming description
     pub fn finish_streaming_description(&mut self) {
-        if let PopupState::StreamingDescription { command, current_description, .. } = &self.popup_state {
+        if let PopupState::StreamingDescription {
+            command,
+            current_description,
+            ..
+        } = &self.popup_state
+        {
             let final_description = current_description.clone();
             let final_command = command.clone();
             self.popup_state = PopupState::Description {
@@ -290,7 +297,9 @@ impl App {
     fn update_status_message(&mut self) {
         let base_message = if let Some(lang) = self.interpreter {
             match lang {
-                InterpreterType::Python => "Python REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
+                InterpreterType::Python => {
+                    "Python REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help"
+                }
                 InterpreterType::R => "R REPL: e=execute, r=repeat | Ctrl+C=quit, F1=help",
             }
         } else if self.is_shell_mode {

@@ -1,4 +1,4 @@
-//! Reqwest-based LLM client implementing OpenAI-compatible Chat Completions streaming.
+//! Reqwest-based LLM client implementing OpenAI-compatible Chat Completions streaming and Responses API.
 
 use std::{pin::Pin, time::Duration};
 
@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
+use std::fs;
+use std::path::Path;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -17,12 +20,36 @@ pub enum Role {
     User,
     Assistant,
     Tool,
+    Developer, // New role for Responses API
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    MultiModal(Vec<ContentPart>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrl },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageUrl {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>, // "low", "high", "auto"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: Role,
-    pub content: String,
+    pub content: MessageContent,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>, // for tool messages if needed
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,11 +97,331 @@ pub struct ChatOptions {
     pub max_tokens: Option<u32>,
 }
 
-#[derive(Debug)]
+// New structures for Responses API
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ResponseInput {
+    Text(String),
+    Messages(Vec<ChatMessage>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ResponseOptions {
+    pub model: String,
+    pub instructions: Option<String>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub reasoning: Option<ReasoningOptions>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReasoningOptions {
+    pub effort: String, // "low", "medium", "high"
+}
+
+impl ReasoningOptions {
+    pub fn low() -> Self {
+        Self {
+            effort: "low".to_string(),
+        }
+    }
+
+    pub fn medium() -> Self {
+        Self {
+            effort: "medium".to_string(),
+        }
+    }
+
+    pub fn high() -> Self {
+        Self {
+            effort: "high".to_string(),
+        }
+    }
+}
+
+// Response structures
+#[derive(Debug, Deserialize)]
+pub struct ResponsesApiResponse {
+    pub id: String,
+    pub object: String,
+    pub model: String,
+    pub output: Vec<ResponseOutput>,
+    pub output_text: Option<String>,
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResponseOutput {
+    pub id: String,
+    pub r#type: String,
+    pub role: String,
+    pub content: Vec<OutputContent>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OutputContent {
+    pub r#type: String,
+    pub text: Option<String>,
+    pub annotations: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Usage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+impl Default for MessageContent {
+    fn default() -> Self {
+        MessageContent::Text(String::new())
+    }
+}
+
+impl std::fmt::Display for MessageContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.extract_text())
+    }
+}
+
+impl MessageContent {
+    /// Create a simple text content
+    pub fn text(text: impl Into<String>) -> Self {
+        MessageContent::Text(text.into())
+    }
+
+    /// Create multimodal content with text and images
+    pub fn multimodal(parts: Vec<ContentPart>) -> Self {
+        MessageContent::MultiModal(parts)
+    }
+
+    /// Get text content if it's a text message
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            MessageContent::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Extract all text from the content (for multimodal, concatenate all text parts)
+    pub fn extract_text(&self) -> String {
+        match self {
+            MessageContent::Text(text) => text.clone(),
+            MessageContent::MultiModal(parts) => parts
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        }
+    }
+}
+
+impl ContentPart {
+    /// Create a text content part
+    pub fn text(text: impl Into<String>) -> Self {
+        ContentPart::Text { text: text.into() }
+    }
+
+    /// Create an image content part from URL
+    pub fn image_url(url: impl Into<String>, detail: Option<String>) -> Self {
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: url.into(),
+                detail,
+            },
+        }
+    }
+
+    /// Create an image content part from base64 data
+    pub fn image_base64(base64_data: &str, mime_type: &str, detail: Option<String>) -> Self {
+        let data_url = format!("data:{};base64,{}", mime_type, base64_data);
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: data_url,
+                detail,
+            },
+        }
+    }
+
+    /// Create an image content part from file path
+    pub fn image_from_file(file_path: &str, detail: Option<String>) -> Result<Self> {
+        let path = Path::new(file_path);
+        if !path.exists() {
+            return Err(anyhow::anyhow!("Image file not found: {}", file_path));
+        }
+
+        // Read file and convert to base64
+        let image_data = fs::read(path)?;
+        let base64_data = base64_encode(&image_data);
+
+        // Determine MIME type from extension
+        let mime_type = match path.extension().and_then(|ext| ext.to_str()) {
+            Some("jpg") | Some("jpeg") => "image/jpeg",
+            Some("png") => "image/png",
+            Some("gif") => "image/gif",
+            Some("webp") => "image/webp",
+            Some("bmp") => "image/bmp",
+            _ => return Err(anyhow::anyhow!("Unsupported image format: {}", file_path)),
+        };
+
+        Ok(ContentPart::image_base64(&base64_data, mime_type, detail))
+    }
+}
+
+impl ChatMessage {
+    /// Create a simple text message
+    pub fn new(role: Role, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: MessageContent::text(content),
+            name: None,
+            tool_calls: None,
+        }
+    }
+
+    /// Create a multimodal message with text and images
+    pub fn multimodal(role: Role, parts: Vec<ContentPart>) -> Self {
+        Self {
+            role,
+            content: MessageContent::multimodal(parts),
+            name: None,
+            tool_calls: None,
+        }
+    }
+
+    /// Add an image from file path to the message
+    pub fn with_image(mut self, image_path: &str, detail: Option<String>) -> Result<Self> {
+        let image_part = ContentPart::image_from_file(image_path, detail)?;
+
+        match &mut self.content {
+            MessageContent::Text(text) => {
+                // Convert to multimodal
+                let text_part = ContentPart::text(text.clone());
+                self.content = MessageContent::multimodal(vec![text_part, image_part]);
+            }
+            MessageContent::MultiModal(parts) => {
+                parts.push(image_part);
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Get text content from the message
+    pub fn get_text(&self) -> String {
+        self.content.extract_text()
+    }
+}
+
+/// Simple base64 encoding function
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+
+    for chunk in data.chunks(3) {
+        let mut buf = [0u8; 3];
+        for (i, &byte) in chunk.iter().enumerate() {
+            buf[i] = byte;
+        }
+
+        let b = ((buf[0] as u32) << 16) | ((buf[1] as u32) << 8) | (buf[2] as u32);
+
+        result.push(CHARS[((b >> 18) & 63) as usize] as char);
+        result.push(CHARS[((b >> 12) & 63) as usize] as char);
+        result.push(if chunk.len() > 1 {
+            CHARS[((b >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        result.push(if chunk.len() > 2 {
+            CHARS[(b & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+
+    result
+}
+
+#[derive(Debug, Clone)]
 pub struct LlmClient {
     http: reqwest::Client,
     base_url: String,
     api_key: Option<String>,
+}
+
+impl ResponseOptions {
+    pub fn new(model: String) -> Self {
+        Self {
+            model,
+            instructions: None,
+            temperature: None,
+            max_tokens: None,
+            reasoning: None,
+        }
+    }
+
+    pub fn with_instructions(mut self, instructions: String) -> Self {
+        self.instructions = Some(instructions);
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
+        self
+    }
+
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = Some(max_tokens);
+        self
+    }
+
+    pub fn with_reasoning(mut self, effort: &str) -> Self {
+        self.reasoning = Some(ReasoningOptions {
+            effort: effort.to_string(),
+        });
+        self
+    }
+}
+
+impl ResponsesApiResponse {
+    /// Get the primary text output from the response
+    pub fn get_text(&self) -> Option<&str> {
+        // First try the convenience field
+        if let Some(ref text) = self.output_text {
+            return Some(text);
+        }
+
+        // Otherwise extract from output array
+        self.output
+            .iter()
+            .find(|output| output.role == "assistant")
+            .and_then(|output| {
+                output
+                    .content
+                    .iter()
+                    .find(|content| content.r#type == "output_text")
+                    .and_then(|content| content.text.as_deref())
+            })
+    }
+
+    /// Get all text outputs concatenated
+    pub fn get_all_text(&self) -> String {
+        if let Some(ref text) = self.output_text {
+            return text.clone();
+        }
+
+        self.output
+            .iter()
+            .filter(|output| output.role == "assistant")
+            .flat_map(|output| &output.content)
+            .filter_map(|content| content.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("")
+    }
 }
 
 impl LlmClient {
@@ -114,6 +461,190 @@ impl LlmClient {
             base_url,
             api_key,
         })
+    }
+
+    /// Create a response using the Responses API (non-streaming)
+    pub async fn create_response(
+        &self,
+        input: ResponseInput,
+        opts: ResponseOptions,
+    ) -> Result<ResponsesApiResponse> {
+        // Check for fake mode
+        if opts.model.to_lowercase() == "fake" {
+            return Ok(self.fake_response(input, opts));
+        }
+
+        let url = format!("{}/responses", self.base_url.trim_end_matches('/'));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        if let Some(key) = &self.api_key {
+            let hv = HeaderValue::from_str(&format!("Bearer {}", key))?;
+            headers.insert(AUTHORIZATION, hv);
+        }
+
+        let mut body = serde_json::json!({
+            "model": opts.model
+        });
+
+        // Set input based on type
+        match input {
+            ResponseInput::Text(text) => {
+                body["input"] = serde_json::json!(text);
+            }
+            ResponseInput::Messages(messages) => {
+                body["input"] = serde_json::to_value(messages)?;
+            }
+        }
+
+        // Add optional parameters
+        if let Some(instructions) = &opts.instructions {
+            body["instructions"] = serde_json::json!(instructions);
+        }
+        if let Some(temperature) = opts.temperature {
+            body["temperature"] = serde_json::json!(temperature);
+        }
+        if let Some(max_tokens) = opts.max_tokens {
+            body["max_tokens"] = serde_json::json!(max_tokens);
+        }
+        if let Some(reasoning) = &opts.reasoning {
+            body["reasoning"] = serde_json::to_value(reasoning)?;
+        }
+
+        let resp = self
+            .http
+            .post(url)
+            .headers(headers)
+            .json(&body)
+            .send()
+            .await
+            .context("failed to send response request")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            let code = status.as_u16();
+            let lower = text.to_lowercase();
+
+            let mut error_msg = format!("Responses API error: {} {}", status, text);
+            let mut hints: Vec<&str> = Vec::new();
+
+            if code == 401 {
+                hints.push("Set OPENAI_API_KEY or export it in your shell");
+            }
+            if code == 404 {
+                hints.push("Your API provider may not support the Responses API; try using chat_stream instead");
+            }
+            if code == 422 || code == 400 {
+                if lower.contains("model")
+                    && (lower.contains("not found")
+                        || lower.contains("unknown")
+                        || lower.contains("invalid"))
+                {
+                    hints.push(
+                        "Check model name or set DEFAULT_MODEL appropriately for your provider",
+                    );
+                }
+            }
+
+            if !hints.is_empty() {
+                error_msg.push_str("\nHint: ");
+                error_msg.push_str(&hints.join("; "));
+            }
+
+            return Err(anyhow::anyhow!(error_msg));
+        }
+
+        let response: ResponsesApiResponse =
+            resp.json().await.context("failed to parse response")?;
+
+        Ok(response)
+    }
+
+    /// Convenience method for simple text input
+    pub async fn generate_text(&self, input: &str, model: &str) -> Result<String> {
+        let opts = ResponseOptions::new(model.to_string());
+        let response = self
+            .create_response(ResponseInput::Text(input.to_string()), opts)
+            .await?;
+        Ok(response.get_all_text())
+    }
+
+    /// Convenience method for text with instructions
+    pub async fn generate_text_with_instructions(
+        &self,
+        input: &str,
+        instructions: &str,
+        model: &str,
+    ) -> Result<String> {
+        let opts =
+            ResponseOptions::new(model.to_string()).with_instructions(instructions.to_string());
+        let response = self
+            .create_response(ResponseInput::Text(input.to_string()), opts)
+            .await?;
+        Ok(response.get_all_text())
+    }
+
+    /// Create a fake response for testing
+    fn fake_response(&self, input: ResponseInput, _opts: ResponseOptions) -> ResponsesApiResponse {
+        let input_text = match input {
+            ResponseInput::Text(text) => text,
+            ResponseInput::Messages(messages) => messages
+                .iter()
+                .filter(|msg| msg.role == Role::User)
+                .last()
+                .map(|msg| msg.content.extract_text())
+                .unwrap_or_default(),
+        };
+
+        let fake_text = generate_fake_chat_response(&input_text);
+
+        ResponsesApiResponse {
+            id: "resp_fake123".to_string(),
+            object: "response".to_string(),
+            model: "fake".to_string(),
+            output_text: Some(fake_text.clone()),
+            output: vec![ResponseOutput {
+                id: "msg_fake123".to_string(),
+                r#type: "message".to_string(),
+                role: "assistant".to_string(),
+                content: vec![OutputContent {
+                    r#type: "output_text".to_string(),
+                    text: Some(fake_text),
+                    annotations: vec![],
+                }],
+            }],
+            usage: Some(Usage {
+                prompt_tokens: 10,
+                completion_tokens: 20,
+                total_tokens: 30,
+            }),
+        }
+    }
+
+    /// Check if an error indicates multimodal/vision API incompatibility and enhance error message
+    fn enhance_multimodal_error(error: anyhow::Error) -> anyhow::Error {
+        let error_str = error.to_string().to_lowercase();
+        
+        if error_str.contains("multimodal") ||
+           error_str.contains("vision") ||  
+           error_str.contains("image") ||
+           error_str.contains("content") ||
+           error_str.contains("deserialize") ||
+           error_str.contains("untagged enum") ||
+           error_str.contains("chatcompletionrequestcontent") ||
+           error_str.contains("did not match any variant") {
+            
+            anyhow::anyhow!(
+                "❌ Your LLM provider doesn't support --image functionality.\n\
+                 💡 Try running without --image parameter, or use a provider that supports vision models (like OpenAI GPT-4o).\n\
+                 \n\
+                 Original error: {}", 
+                error
+            )
+        } else {
+            error
+        }
     }
 
     pub fn chat_stream(
@@ -164,6 +695,7 @@ impl LlmClient {
                 .json(&body)
                 .send()
                 .await
+                .map_err(|e| Self::enhance_multimodal_error(anyhow::Error::from(e)))
                 .context("failed to send chat request")?;
 
             // Avoid moving `resp` in the error branch by wrapping in Option
@@ -199,7 +731,8 @@ impl LlmClient {
                     msg.push_str(&hints.join("; "));
                 }
 
-                Err(anyhow::anyhow!("LLM error: {} {}", status, msg))?;
+                let llm_error = anyhow::anyhow!("LLM error: {} {}", status, msg);
+                Err(Self::enhance_multimodal_error(llm_error))?;
             }
 
             let mut buf = String::new();
@@ -261,20 +794,20 @@ impl LlmClient {
             let last_user_message = messages.iter()
                 .rev()
                 .find(|msg| msg.role == Role::User)
-                .map(|msg| msg.content.as_str())
-                .unwrap_or("");
+                .map(|msg| msg.content.extract_text())
+                .unwrap_or_default();
 
             // Check if this is a shell mode based on system message
             let is_shell_mode = messages.iter()
                 .any(|msg| msg.role == Role::System &&
-                     (msg.content.contains("shell command") ||
-                      msg.content.contains("Shell Command Generator")));
+                     (msg.content.extract_text().contains("shell command") ||
+                      msg.content.extract_text().contains("Shell Command Generator")));
 
             // Generate appropriate fake response
             let response = if is_shell_mode {
-                generate_fake_shell_response(last_user_message)
+                generate_fake_shell_response(&last_user_message)
             } else {
-                generate_fake_chat_response(last_user_message)
+                generate_fake_chat_response(&last_user_message)
             };
 
             // Stream the response character by character to simulate real streaming

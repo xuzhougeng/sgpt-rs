@@ -25,5 +25,9 @@ pub async fn start_python(bootstrap: &str) -> Result<ProcessHandle> {
         .take()
         .ok_or_else(|| anyhow::anyhow!("no stdout"))?;
 
-    Ok(ProcessHandle { child, stdin, stdout })
+    Ok(ProcessHandle {
+        child,
+        stdin,
+        stdout,
+    })
 }

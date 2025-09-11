@@ -21,6 +21,7 @@ pub async fn run(
     max_tokens: Option<u32>,
     no_interaction: bool,
     auto_execute: bool,
+    image_parts: Option<Vec<crate::llm::ContentPart>>,
 ) -> Result<()> {
     let cfg = Config::load();
     let client = LlmClient::from_config(&cfg)?;
@@ -36,20 +37,20 @@ pub async fn run(
         top_p: f32,
         max_tokens: Option<u32>,
         user_prompt: String,
+        image_parts: Option<Vec<crate::llm::ContentPart>>,
     ) -> Result<String> {
+        // Create user message with optional images
+        let user_message = match image_parts {
+            Some(mut parts) => {
+                parts.insert(0, crate::llm::ContentPart::text(user_prompt));
+                ChatMessage::multimodal(Role::User, parts)
+            }
+            None => ChatMessage::new(Role::User, user_prompt),
+        };
+
         let messages = vec![
-            ChatMessage {
-                role: Role::System,
-                content: role_text.to_string(),
-                name: None,
-                tool_calls: None,
-            },
-            ChatMessage {
-                role: Role::User,
-                content: user_prompt,
-                name: None,
-                tool_calls: None,
-            },
+            ChatMessage::new(Role::System, role_text.to_string()),
+            user_message,
         ];
         let opts = ChatOptions {
             model: model.to_string(),
@@ -78,6 +79,7 @@ pub async fn run(
         top_p,
         max_tokens,
         prompt.to_string(),
+        image_parts.clone(),
     )
     .await?;
     println!("{}", cmd);
@@ -112,7 +114,8 @@ pub async fn run(
                 break;
             }
             "d" => {
-                super::describe::run(&cmd, model, temperature, top_p, false, max_tokens).await?;
+                super::describe::run(&cmd, model, temperature, top_p, false, max_tokens, None)
+                    .await?;
                 // After describe, show prompt again
             }
             "m" => {
@@ -129,6 +132,7 @@ pub async fn run(
                     top_p,
                     max_tokens,
                     refine,
+                    image_parts.clone(),
                 )
                 .await?;
                 println!("{}", cmd);

@@ -70,17 +70,16 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             Role::Assistant => ("", Style::default().fg(Color::Cyan)),
             Role::System => ("SYS ", Style::default().fg(Color::Yellow)),
             Role::Tool => ("TOOL ", Style::default().fg(Color::Magenta)),
+            Role::Developer => ("DEV ", Style::default().fg(Color::Blue)),
         };
 
         let content = format!("{}{}", prefix, msg.content);
-        
+
         // Add each line with proper styling
         for line in content.lines() {
-            content_lines.push(Line::from(vec![
-                Span::styled(line.to_string(), style)
-            ]));
+            content_lines.push(Line::from(vec![Span::styled(line.to_string(), style)]));
         }
-        
+
         // Add empty line between messages for readability
         if !content.is_empty() {
             content_lines.push(Line::from(""));
@@ -90,11 +89,9 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     // Add current response if streaming
     if app.is_receiving_response && !app.current_response.is_empty() {
         let style = Style::default().fg(Color::Cyan);
-        
+
         for line in app.current_response.lines() {
-            content_lines.push(Line::from(vec![
-                Span::styled(line.to_string(), style)
-            ]));
+            content_lines.push(Line::from(vec![Span::styled(line.to_string(), style)]));
         }
     }
 
@@ -102,19 +99,19 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         "Chat History - Session: {} | Model: {}",
         app.chat_id, app.model
     );
-    
+
     // Calculate scrolling
     let available_height = area.height.saturating_sub(2) as usize; // Account for borders
     let total_lines = content_lines.len();
-    
+
     // Create text content
     let text_content = Text::from(content_lines);
-    
+
     // Create paragraph with scrolling
     let mut paragraph = Paragraph::new(text_content)
         .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: false });
-    
+
     if total_lines > available_height {
         // Calculate scroll position - when chat_scroll_offset is 0, show the bottom
         let scroll_y = if app.chat_scroll_offset == 0 {
@@ -124,9 +121,11 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             // Manual scroll: respect scroll offset
             let max_scroll = total_lines.saturating_sub(available_height);
             let actual_offset = app.chat_scroll_offset.min(max_scroll);
-            (total_lines.saturating_sub(available_height).saturating_sub(actual_offset)) as u16
+            (total_lines
+                .saturating_sub(available_height)
+                .saturating_sub(actual_offset)) as u16
         };
-        
+
         paragraph = paragraph.scroll((scroll_y, 0));
     }
 
@@ -322,7 +321,12 @@ fn render_execution_result_popup(frame: &mut Frame, command: &str, output: &str)
 }
 
 /// Render streaming command description popup
-fn render_streaming_description_popup(frame: &mut Frame, command: &str, current_description: &str, is_loading: bool) {
+fn render_streaming_description_popup(
+    frame: &mut Frame,
+    command: &str,
+    current_description: &str,
+    is_loading: bool,
+) {
     let area = frame.area();
 
     // Create centered popup area
@@ -364,13 +368,13 @@ fn render_streaming_description_popup(frame: &mut Frame, command: &str, current_
     } else {
         current_description
     };
-    
+
     let title = if is_loading && !current_description.is_empty() {
         "Description (streaming...)"
     } else {
         "Description"
     };
-    
+
     let description_paragraph = Paragraph::new(description_text)
         .block(
             Block::default()
@@ -391,7 +395,7 @@ fn render_streaming_description_popup(frame: &mut Frame, command: &str, current_
     } else {
         "Press any key to close"
     };
-    
+
     let instructions = Paragraph::new(instructions_text)
         .style(Style::default().fg(Color::Yellow))
         .block(Block::default().borders(Borders::ALL));

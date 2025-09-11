@@ -25,7 +25,10 @@ pub enum TuiEvent {
     /// Request to describe a shell command
     DescribeCommand(String),
     /// Command description received from AI
-    CommandDescription { command: String, description: String },
+    CommandDescription {
+        command: String,
+        description: String,
+    },
     /// Start streaming description for a command
     StartStreamingDescription(String),
     /// Streaming description content chunk

@@ -22,6 +22,7 @@ pub async fn run(
     markdown: bool,
     allow_functions: bool,
     role_name: Option<&str>,
+    image_parts: Option<Vec<crate::llm::ContentPart>>,
 ) -> Result<()> {
     let cfg = Config::load();
     let client = LlmClient::from_config(&cfg)?;
@@ -40,20 +41,18 @@ pub async fn run(
     let mut messages = if session.exists(chat_id) {
         session.read(chat_id)?
     } else {
-        vec![ChatMessage {
-            role: Role::System,
-            content: system_text,
-            name: None,
-            tool_calls: None,
-        }]
+        vec![ChatMessage::new(Role::System, system_text)]
     };
     if !prompt.is_empty() {
-        messages.push(ChatMessage {
-            role: Role::User,
-            content: prompt.to_string(),
-            name: None,
-            tool_calls: None,
-        });
+        // Create user message with optional images
+        let user_message = match image_parts {
+            Some(mut parts) => {
+                parts.insert(0, crate::llm::ContentPart::text(prompt.to_string()));
+                ChatMessage::multimodal(Role::User, parts)
+            }
+            None => ChatMessage::new(Role::User, prompt.to_string()),
+        };
+        messages.push(user_message);
     }
     let mut opts = ChatOptions {
         model: model.to_string(),
@@ -79,12 +78,7 @@ pub async fn run(
             print!("{}\n", text);
             if chat_id != "temp" && !text.is_empty() {
                 let mut msgs_to_persist = messages.clone();
-                msgs_to_persist.push(ChatMessage {
-                    role: Role::Assistant,
-                    content: text,
-                    name: None,
-                    tool_calls: None,
-                });
+                msgs_to_persist.push(ChatMessage::new(Role::Assistant, text));
                 session.write(chat_id, msgs_to_persist)?;
             }
             return Ok(());
@@ -131,41 +125,30 @@ pub async fn run(
     // Persist chat if not temp
     if chat_id != "temp" {
         if !assistant_text.is_empty() {
-            messages.push(ChatMessage {
-                role: Role::Assistant,
-                content: assistant_text.clone(),
-                name: None,
-                tool_calls: None,
-            });
+            messages.push(ChatMessage::new(Role::Assistant, assistant_text.clone()));
             session.write(chat_id, messages.clone())?;
         }
     }
     // Tool call execution and second pass
     if saw_tool_calls {
         if let Some(name) = tool_name.clone() {
-            messages.push(ChatMessage {
-                role: Role::Assistant,
-                content: String::new(),
-                name: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: None,
-                    r#type: "function".into(),
-                    function: FunctionCall {
-                        name: name.clone(),
-                        arguments: tool_args.clone(),
-                    },
-                }]),
-            });
+            let mut assistant_msg = ChatMessage::new(Role::Assistant, String::new());
+            assistant_msg.tool_calls = Some(vec![ToolCall {
+                id: None,
+                r#type: "function".into(),
+                function: FunctionCall {
+                    name: name.clone(),
+                    arguments: tool_args.clone(),
+                },
+            }]);
+            messages.push(assistant_msg);
             let result = registry
                 .execute(&name, &tool_args)
                 .await
                 .unwrap_or_else(|e| format!("tool error: {}", e));
-            messages.push(ChatMessage {
-                role: Role::Tool,
-                content: result,
-                name: Some(name),
-                tool_calls: None,
-            });
+            let mut tool_msg = ChatMessage::new(Role::Tool, result);
+            tool_msg.name = Some(name);
+            messages.push(tool_msg);
             assistant_text.clear();
             tool_args.clear();
             let mut stream2 = client.chat_stream(messages.clone(), opts.clone());
@@ -190,12 +173,7 @@ pub async fn run(
                 MarkdownPrinter::default().print(&assistant_text);
             }
             if chat_id != "temp" && !assistant_text.is_empty() {
-                messages.push(ChatMessage {
-                    role: Role::Assistant,
-                    content: assistant_text.clone(),
-                    name: None,
-                    tool_calls: None,
-                });
+                messages.push(ChatMessage::new(Role::Assistant, assistant_text.clone()));
                 session.write(chat_id, messages.clone())?;
             }
         }

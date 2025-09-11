@@ -18,14 +18,14 @@ use super::{
     events::TuiEvent,
     ui::render_ui,
 };
+use crate::execution::ExecutionResult as CodeExecResult;
+use crate::process::{self, InterpreterType};
 use crate::{
     cache::ChatSession,
     config::Config,
     llm::{ChatMessage, ChatOptions, LlmClient, Role, StreamEvent},
 };
-use crate::process::{self, InterpreterType};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use crate::execution::ExecutionResult as CodeExecResult;
 
 /// Run the TUI-based REPL
 pub async fn run_tui_repl(
@@ -75,12 +75,7 @@ pub async fn run_tui_repl(
     let history = if session.exists(chat_id) {
         session.read(chat_id)?
     } else {
-        vec![ChatMessage {
-            role: Role::System,
-            content: system_role_text,
-            name: None,
-            tool_calls: None,
-        }]
+        vec![ChatMessage::new(Role::System, system_role_text)]
     };
 
     // Initialize TUI app state
@@ -123,7 +118,9 @@ pub async fn run_tui_repl(
 
     // Restore terminal
     disable_raw_mode()?;
-    terminal.backend_mut().execute(crossterm::event::DisableMouseCapture)?;
+    terminal
+        .backend_mut()
+        .execute(crossterm::event::DisableMouseCapture)?;
     terminal.backend_mut().execute(LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
@@ -234,31 +231,83 @@ while True:
             let mut line = String::new();
             loop {
                 line.clear();
-                let n = match reader.read_line(&mut line).await { Ok(n) => n, Err(_) => break };
-                if n == 0 { break; }
+                let n = match reader.read_line(&mut line).await {
+                    Ok(n) => n,
+                    Err(_) => break,
+                };
+                if n == 0 {
+                    break;
+                }
                 let trimmed = line.trim();
-                if trimmed.is_empty() { continue; }
-                let parsed: serde_json::Value = match serde_json::from_str(trimmed) { Ok(v) => v, Err(_) => continue };
-                let id_str = parsed.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let parsed: serde_json::Value = match serde_json::from_str(trimmed) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let id_str = parsed
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let res = if let Some(obj) = parsed.get("result") {
-                    let success = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let output = obj.get("output").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let errors_vec = obj.get("errors").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let success = obj
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let output = obj
+                        .get("output")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let errors_vec = obj
+                        .get("errors")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
                     let mut errors = Vec::new();
-                    for e in errors_vec { if let Some(s) = e.as_str() { errors.push(s.to_string()); } }
+                    for e in errors_vec {
+                        if let Some(s) = e.as_str() {
+                            errors.push(s.to_string());
+                        }
+                    }
                     let mut variables = std::collections::HashMap::new();
                     if let Some(vars_obj) = obj.get("variables").and_then(|v| v.as_object()) {
                         for (k, v) in vars_obj {
-                            if let Some(s) = v.as_str() { variables.insert(k.clone(), s.to_string()); }
+                            if let Some(s) = v.as_str() {
+                                variables.insert(k.clone(), s.to_string());
+                            }
                         }
                     }
                     let plots = Vec::new();
-                    CodeExecResult { success, output, errors, variables, plots }
+                    CodeExecResult {
+                        success,
+                        output,
+                        errors,
+                        variables,
+                        plots,
+                    }
                 } else if let Some(err) = parsed.get("error") {
-                    let msg = err.get("message").and_then(|v| v.as_str()).unwrap_or("error");
-                    CodeExecResult { success: false, output: String::new(), errors: vec![msg.to_string()], variables: Default::default(), plots: vec![] }
+                    let msg = err
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("error");
+                    CodeExecResult {
+                        success: false,
+                        output: String::new(),
+                        errors: vec![msg.to_string()],
+                        variables: Default::default(),
+                        plots: vec![],
+                    }
                 } else {
-                    CodeExecResult { success: false, output: String::new(), errors: vec!["invalid_response".to_string()], variables: Default::default(), plots: vec![] }
+                    CodeExecResult {
+                        success: false,
+                        output: String::new(),
+                        errors: vec!["invalid_response".to_string()],
+                        variables: Default::default(),
+                        plots: vec![],
+                    }
                 };
                 if id_str.starts_with("vars-") {
                     // Format variables snapshot
@@ -293,10 +342,14 @@ while True:
             if event::poll(Duration::from_millis(100)).unwrap_or(false) {
                 match event::read() {
                     Ok(Event::Key(key)) => {
-                        if let Err(_) = input_tx.send(TuiEvent::Key(key)) { break; }
+                        if let Err(_) = input_tx.send(TuiEvent::Key(key)) {
+                            break;
+                        }
                     }
                     Ok(Event::Mouse(m)) => {
-                        if let Err(_) = input_tx.send(TuiEvent::Mouse(m)) { break; }
+                        if let Err(_) = input_tx.send(TuiEvent::Mouse(m)) {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -316,13 +369,11 @@ while True:
                         break; // Quit requested
                     }
                 }
-                TuiEvent::Mouse(m) => {
-                    match m.kind {
-                        MouseEventKind::ScrollUp => app.scroll_up(),
-                        MouseEventKind::ScrollDown => app.scroll_down(),
-                        _ => {}
-                    }
-                }
+                TuiEvent::Mouse(m) => match m.kind {
+                    MouseEventKind::ScrollUp => app.scroll_up(),
+                    MouseEventKind::ScrollDown => app.scroll_down(),
+                    _ => {}
+                },
                 TuiEvent::UserInput(input) => {
                     // Check if we should queue the message
                     if !app.try_queue_message(input.clone()) {
@@ -383,69 +434,102 @@ while True:
                     } else {
                         // For real models, start streaming description
                         let _ = event_tx.send(TuiEvent::StartStreamingDescription(cmd.clone()));
-                        
+
                         let cmd_clone = cmd.clone();
                         let model_clone = app.model.clone();
                         let tx = event_tx.clone();
                         tokio::spawn(async move {
-                            match generate_streaming_command_description(&cmd_clone, &model_clone, tx.clone()).await {
+                            match generate_streaming_command_description(
+                                &cmd_clone,
+                                &model_clone,
+                                tx.clone(),
+                            )
+                            .await
+                            {
                                 Ok(_) => {
                                     let _ = tx.send(TuiEvent::DescriptionStreamFinished);
                                 }
                                 Err(_) => {
-                                    let _ = tx.send(TuiEvent::DescriptionContent(
-                                        format!("Failed to generate description for: {}", cmd_clone)
-                                    ));
+                                    let _ = tx.send(TuiEvent::DescriptionContent(format!(
+                                        "Failed to generate description for: {}",
+                                        cmd_clone
+                                    )));
                                     let _ = tx.send(TuiEvent::DescriptionStreamFinished);
                                 }
                             }
                         });
                     }
                 }
-                TuiEvent::ExecuteCode { language, code } => {
-                    match language {
-                        InterpreterType::Python => {
-                            if let Some(stdin) = py_stdin_opt.as_mut() {
-                                let id = { let cur = req_counter; req_counter = req_counter.wrapping_add(1); format!("req-{}", cur) };
-                                let code = sanitize_generated_code(&code);
-                                let req = serde_json::json!({
-                                    "id": id,
-                                    "method": "execute",
-                                    "params": {"code": code, "capture_output": true}
-                                });
-                                let _ = stdin.write_all((serde_json::to_string(&req).unwrap() + "\n").as_bytes()).await;
-                            } else {
-                                app.add_message(ChatMessage { role: Role::Assistant, content: "Interpreter not initialized".to_string(), name: None, tool_calls: None });
-                            }
-                        }
-                        InterpreterType::R => {
-                            app.add_message(ChatMessage { role: Role::Assistant, content: "R interpreter is not yet implemented".to_string(), name: None, tool_calls: None });
+                TuiEvent::ExecuteCode { language, code } => match language {
+                    InterpreterType::Python => {
+                        if let Some(stdin) = py_stdin_opt.as_mut() {
+                            let id = {
+                                let cur = req_counter;
+                                req_counter = req_counter.wrapping_add(1);
+                                format!("req-{}", cur)
+                            };
+                            let code = sanitize_generated_code(&code);
+                            let req = serde_json::json!({
+                                "id": id,
+                                "method": "execute",
+                                "params": {"code": code, "capture_output": true}
+                            });
+                            let _ = stdin
+                                .write_all((serde_json::to_string(&req).unwrap() + "\n").as_bytes())
+                                .await;
+                        } else {
+                            app.add_message(ChatMessage::new(
+                                Role::Assistant,
+                                "Interpreter not initialized".to_string(),
+                            ));
                         }
                     }
-                }
+                    InterpreterType::R => {
+                        app.add_message(ChatMessage::new(
+                            Role::Assistant,
+                            "R interpreter is not yet implemented".to_string(),
+                        ));
+                    }
+                },
                 TuiEvent::ShowVariables => {
                     if matches!(app.interpreter, Some(InterpreterType::Python)) {
                         if let Some(stdin) = py_stdin_opt.as_mut() {
-                            let id = { let cur = req_counter; req_counter = req_counter.wrapping_add(1); format!("vars-{}", cur) };
-                            let req = serde_json::json!({ "id": id, "method": "vars", "params": {} });
-                            let _ = stdin.write_all((serde_json::to_string(&req).unwrap() + "\n").as_bytes()).await;
+                            let id = {
+                                let cur = req_counter;
+                                req_counter = req_counter.wrapping_add(1);
+                                format!("vars-{}", cur)
+                            };
+                            let req =
+                                serde_json::json!({ "id": id, "method": "vars", "params": {} });
+                            let _ = stdin
+                                .write_all((serde_json::to_string(&req).unwrap() + "\n").as_bytes())
+                                .await;
                         }
                     }
                 }
                 TuiEvent::CodeExecutionResult(res) => {
                     let mut text = String::new();
-                    if !res.output.is_empty() { text.push_str(&res.output); }
+                    if !res.output.is_empty() {
+                        text.push_str(&res.output);
+                    }
                     if !res.errors.is_empty() {
-                        if !text.is_empty() { text.push_str("\n"); }
+                        if !text.is_empty() {
+                            text.push_str("\n");
+                        }
                         text.push_str(&res.errors.join("\n"));
                     }
-                    if text.is_empty() && res.success { text = "(ok)".to_string(); }
-                    app.add_message(ChatMessage { role: Role::Assistant, content: text, name: None, tool_calls: None });
+                    if text.is_empty() && res.success {
+                        text = "(ok)".to_string();
+                    }
+                    app.add_message(ChatMessage::new(Role::Assistant, text));
                 }
                 TuiEvent::VariablesSnapshot(text) => {
-                    app.add_message(ChatMessage { role: Role::Assistant, content: text, name: None, tool_calls: None });
+                    app.add_message(ChatMessage::new(Role::Assistant, text));
                 }
-                TuiEvent::CommandDescription { command, description } => {
+                TuiEvent::CommandDescription {
+                    command,
+                    description,
+                } => {
                     app.show_description(command, description);
                 }
                 TuiEvent::StartStreamingDescription(command) => {
@@ -466,7 +550,9 @@ while True:
     }
 
     // Attempt to terminate interpreter if running
-    if let Some(mut child) = _py_child_opt { let _ = child.kill().await; }
+    if let Some(mut child) = _py_child_opt {
+        let _ = child.kill().await;
+    }
     Ok(())
 }
 
@@ -533,15 +619,20 @@ async fn handle_key_event(
                         "e" | "r" if !app.last_command.is_empty() => {
                             if app.interpreter.is_some() {
                                 let lang = app.interpreter.unwrap();
-                                let _ = event_tx.send(TuiEvent::ExecuteCode { language: lang, code: app.last_command.clone() });
+                                let _ = event_tx.send(TuiEvent::ExecuteCode {
+                                    language: lang,
+                                    code: app.last_command.clone(),
+                                });
                             } else {
-                                let _ = event_tx.send(TuiEvent::ExecuteCommand(app.last_command.clone()));
+                                let _ = event_tx
+                                    .send(TuiEvent::ExecuteCommand(app.last_command.clone()));
                             }
                             app.clear_input();
                             return Ok(false);
                         }
                         "d" if !app.last_command.is_empty() => {
-                            let _ = event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
+                            let _ =
+                                event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
                             app.clear_input();
                             return Ok(false);
                         }
@@ -584,12 +675,7 @@ async fn handle_user_input(
     }
 
     // Add user message to history
-    app.add_message(ChatMessage {
-        role: Role::User,
-        content: input.clone(),
-        name: None,
-        tool_calls: None,
-    });
+    app.add_message(ChatMessage::new(Role::User, input.clone()));
 
     // Start streaming response
     app.start_response();
@@ -602,7 +688,7 @@ async fn handle_user_input(
             InterpreterType::Python => "You are a Python code generator. Given the user's request, produce ONLY executable Python code without explanations, comments, or Markdown fences. Avoid triple backticks.",
             InterpreterType::R => "You are an R code generator. Given the user's request, produce ONLY executable R code without explanations, comments, or Markdown fences. Avoid triple backticks.",
         };
-        messages.push(ChatMessage { role: Role::System, content: content.to_string(), name: None, tool_calls: None });
+        messages.push(ChatMessage::new(Role::System, content.to_string()));
     }
     messages.extend(app.messages.clone());
     let opts = ChatOptions {
@@ -729,7 +815,9 @@ fn sanitize_generated_code(s: &str) -> String {
         let _ = lines.next();
         let mut buf = String::new();
         for line in lines {
-            if line.starts_with("```") { break; }
+            if line.starts_with("```") {
+                break;
+            }
             buf.push_str(line);
             buf.push('\n');
         }
@@ -744,32 +832,19 @@ fn sanitize_generated_code(s: &str) -> String {
 }
 
 /// Generate real command description using AI (non-streaming, kept for compatibility)
-async fn generate_real_command_description(
-    command: &str,
-    model: &str,
-) -> Result<String> {
-    use crate::role::{default_role_text, DefaultRole};
+async fn generate_real_command_description(command: &str, model: &str) -> Result<String> {
     use crate::config::Config;
-    
+    use crate::role::{default_role_text, DefaultRole};
+
     let cfg = Config::load();
     let client = LlmClient::from_config(&cfg)?;
     let role_text = default_role_text(&cfg, DefaultRole::DescribeShell);
 
     let messages = vec![
-        ChatMessage {
-            role: Role::System,
-            content: role_text,
-            name: None,
-            tool_calls: None,
-        },
-        ChatMessage {
-            role: Role::User,
-            content: command.to_string(),
-            name: None,
-            tool_calls: None,
-        },
+        ChatMessage::new(Role::System, role_text),
+        ChatMessage::new(Role::User, command.to_string()),
     ];
-    
+
     let opts = ChatOptions {
         model: model.to_string(),
         temperature: 0.1, // Lower temperature for more consistent descriptions
@@ -782,7 +857,7 @@ async fn generate_real_command_description(
 
     let mut stream = client.chat_stream(messages, opts);
     let mut description = String::new();
-    
+
     while let Some(event) = stream.next().await {
         match event? {
             StreamEvent::Content(content) => {
@@ -792,7 +867,7 @@ async fn generate_real_command_description(
             _ => {}
         }
     }
-    
+
     Ok(description.trim().to_string())
 }
 
@@ -802,28 +877,18 @@ async fn generate_streaming_command_description(
     model: &str,
     event_sender: mpsc::UnboundedSender<TuiEvent>,
 ) -> Result<()> {
-    use crate::role::{default_role_text, DefaultRole};
     use crate::config::Config;
-    
+    use crate::role::{default_role_text, DefaultRole};
+
     let cfg = Config::load();
     let client = LlmClient::from_config(&cfg)?;
     let role_text = default_role_text(&cfg, DefaultRole::DescribeShell);
 
     let messages = vec![
-        ChatMessage {
-            role: Role::System,
-            content: role_text,
-            name: None,
-            tool_calls: None,
-        },
-        ChatMessage {
-            role: Role::User,
-            content: command.to_string(),
-            name: None,
-            tool_calls: None,
-        },
+        ChatMessage::new(Role::System, role_text),
+        ChatMessage::new(Role::User, command.to_string()),
     ];
-    
+
     let opts = ChatOptions {
         model: model.to_string(),
         temperature: 0.1, // Lower temperature for more consistent descriptions
@@ -835,7 +900,7 @@ async fn generate_streaming_command_description(
     };
 
     let mut stream = client.chat_stream(messages, opts);
-    
+
     while let Some(event) = stream.next().await {
         match event? {
             StreamEvent::Content(content) => {
@@ -845,7 +910,7 @@ async fn generate_streaming_command_description(
             _ => {}
         }
     }
-    
+
     Ok(())
 }
 

@@ -3,8 +3,8 @@
 use anyhow::Result;
 use std::io;
 
-use crate::tui::run_tui_repl;
 use crate::process::InterpreterType;
+use crate::tui::run_tui_repl;
 
 /// Run REPL mode with TUI interface
 pub async fn run(
