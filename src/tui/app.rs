@@ -79,8 +79,6 @@ pub struct App {
     pub max_display_messages: usize,
     /// Popup display state
     pub popup_state: PopupState,
-    /// Stored collapsed paste content for potential expansion
-    pub collapsed_paste_content: Option<String>,
     /// Pending paste mappings: (placeholder -> actual content)
     pub pending_pastes: Vec<(String, String)>,
     /// Timestamp of last Ctrl+C press for double Ctrl+C detection
@@ -135,7 +133,6 @@ impl App {
             chat_scroll_offset: 0,
             max_display_messages: 100,
             popup_state: PopupState::None,
-            collapsed_paste_content: None,
             pending_pastes: Vec::new(),
             last_ctrl_c_time: None,
         }
@@ -495,7 +492,7 @@ impl App {
 
     /// Update status message to show queue status
     fn update_status_message(&mut self) {
-        self.status_message = if let Some(lang) = self.interpreter {
+        let base_message = if let Some(lang) = self.interpreter {
             match lang {
                 InterpreterType::Python => {
                     "Python REPL: e=execute, r=repeat | ctrl+h help".to_string()
@@ -511,48 +508,17 @@ impl App {
         } else {
             "Chat Mode | ctrl+h help".to_string()
         };
-    }
 
-    /// Store collapsed paste content for potential expansion
-    pub fn store_collapsed_paste_content(&mut self, content: String) {
-        self.collapsed_paste_content = Some(content);
-    }
-
-    /// Check if current input contains a collapsed paste indicator and expand it if requested
-    pub fn try_expand_collapsed_paste(&mut self) -> bool {
-        if let Some(ref stored_content) = self.collapsed_paste_content.clone() {
-            // Check if current input contains the collapsed indicator pattern
-            if self.input.contains("[pasted content ") && self.input.contains(" chars]") {
-                // Replace the collapsed indicator with the actual content
-                let pattern_start = self.input.find("[pasted content ").unwrap();
-                let pattern_end = self.input.find(" chars]").unwrap() + " chars]".len();
-
-                let before = self.input[..pattern_start].to_string();
-                let after = self.input[pattern_end..].to_string();
-
-                let new_input = format!("{}{}{}", before, stored_content, after);
-                let new_cursor = before.chars().count() + stored_content.chars().count();
-
-                self.input = new_input;
-                self.input_cursor = new_cursor;
-                self.collapsed_paste_content = None;
-
-                // If the expanded content has newlines, switch to multiline mode
-                if self.input.contains('\n') {
-                    let parts: Vec<String> =
-                        self.input.split('\n').map(|s| s.to_string()).collect();
-                    if parts.len() > 1 {
-                        self.multiline_buffer = parts[..parts.len() - 1].to_vec();
-                        self.input = parts.last().unwrap_or(&String::new()).clone();
-                        self.input_cursor = self.input.chars().count();
-                        self.input_mode = InputMode::MultiLine;
-                    }
-                }
-
-                return true;
-            }
-        }
-        false
+        // Add paste indicator if there are pending pastes
+        self.status_message = if !self.pending_pastes.is_empty() {
+            format!(
+                "{} | 📋 {} paste(s) - ctrl+e to expand",
+                base_message,
+                self.pending_pastes.len()
+            )
+        } else {
+            base_message
+        };
     }
 
     /// Handle Ctrl+C press and detect double press for quit
@@ -584,6 +550,7 @@ impl App {
     /// Register a placeholder to actual pasted content mapping
     pub fn register_pending_paste(&mut self, placeholder: String, actual: String) {
         self.pending_pastes.push((placeholder, actual));
+        self.update_status_message();
     }
 
     /// Expand placeholders to actual pasted content for submission, then clear mappings
@@ -607,6 +574,7 @@ impl App {
         }
         // Clear mappings after expansion
         self.pending_pastes.clear();
+        self.update_status_message();
         text
     }
 
@@ -683,6 +651,7 @@ impl App {
                     self.input_cursor = start_chars;
                     // Remove mapping (only one occurrence)
                     self.pending_pastes.remove(idx);
+                    self.update_status_message();
                     return true;
                 }
             }
@@ -695,8 +664,14 @@ impl App {
         if self.pending_pastes.is_empty() {
             return;
         }
+        let before_count = self.pending_pastes.len();
         let full = self.get_input_text();
         self.pending_pastes.retain(|(ph, _)| full.contains(ph));
+
+        // Update status if any pastes were cleaned up
+        if self.pending_pastes.len() != before_count {
+            self.update_status_message();
+        }
     }
 }
 

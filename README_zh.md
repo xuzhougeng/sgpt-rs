@@ -35,7 +35,16 @@ export OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export DEFAULT_MODEL=deepseek-chat
 ```
 
-大抵是支持所所有OpenAI接口兼容的模型。
+大抵是支持所所有OpenAI接口兼容的模型，比如说轨迹流动
+
+```bash
+export API_BASE_URL=https://api.siliconflow.cn
+export OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export DEFAULT_MODEL=moonshotai/Kimi-K2-Instruct-0905
+```
+
+对于参数--image需要用支持多模态的模型，例如轨迹流动提供的 zai-org/GLM-4.5V
+
 
 ### 使用 Ollama（本地模型）
 
@@ -48,16 +57,16 @@ export DEFAULT_MODEL=deepseek-chat
 ```bash
 # 推荐写法：带 /v1（客户端会自动补齐 /v1，不带也可以）
 export API_BASE_URL=http://localhost:11434/v1
-# Ollama 本地不需要 API Key（未设置时不会发送 Authorization 头）
-unset OPENAI_API_KEY
+# Ollama 不需要API_KEY, 随便写
+export OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # 选择已拉取的模型，例如：llama3.1 / qwen2.5 / mistral 等
-export DEFAULT_MODEL=llama3.1
+export DEFAULT_MODEL=gpt-oss:120b
 ```
 
 3) 试运行：
 
 ```bash
-sgpt --model llama3.1 "你好，介绍一下你自己"
+sgpt --model gpt-oss:120b "你好，介绍一下你自己"
 ```
 
 注意：

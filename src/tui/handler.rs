@@ -982,18 +982,34 @@ async fn handle_user_input(
 }
 
 fn app_paste_text(app: &mut App, content: &str) {
-    const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;
+    const LARGE_PASTE_CHAR_THRESHOLD: usize = 200;
+    const MEDIUM_PASTE_CHAR_THRESHOLD: usize = 50;
 
     let char_count = content.chars().count();
     let content_to_insert = if char_count > LARGE_PASTE_CHAR_THRESHOLD {
         // Show compact placeholder instead of full content
-        format!("[Pasted Content {} chars]", char_count)
+        format!("📋[PASTE: {} chars]", char_count)
+    } else if char_count > MEDIUM_PASTE_CHAR_THRESHOLD {
+        // Show truncated preview with char count, handling newlines for better display
+        let preview: String = content.chars().take(MEDIUM_PASTE_CHAR_THRESHOLD).collect();
+        let clean_preview = if preview.contains('\n') {
+            // For multiline content, show first line only and indicate more
+            let first_line = preview.lines().next().unwrap_or("").to_string();
+            if first_line.len() < MEDIUM_PASTE_CHAR_THRESHOLD - 10 && content.lines().count() > 1 {
+                format!("{}... (+{} lines)", first_line, content.lines().count() - 1)
+            } else {
+                first_line
+            }
+        } else {
+            preview
+        };
+        format!("{}...📋[{} chars total]", clean_preview, char_count)
     } else {
         content.to_string()
     };
 
     // Register mapping so we can expand later on submit or explicit request
-    if char_count > LARGE_PASTE_CHAR_THRESHOLD {
+    if char_count > MEDIUM_PASTE_CHAR_THRESHOLD {
         app.register_pending_paste(content_to_insert.clone(), content.to_string());
     }
 
