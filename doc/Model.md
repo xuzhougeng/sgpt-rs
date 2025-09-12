@@ -336,6 +336,24 @@ sgpt --model fake --functions "Search for recent news about AI"
   - 支持高优先级的 `instructions` 参数和推理模型的 `reasoning` 配置。
   - 返回结构包含 `output_text` 便利字段，简化文本提取。
 
+### 与 Ollama 的兼容
+
+Ollama 提供 OpenAI 兼容接口，可直接通过本客户端调用：
+
+- 配置示例：
+
+  ```bash
+  # 可选两种写法：
+  export API_BASE_URL=http://localhost:11434/v1   # 明确 /v1
+  # 或 export API_BASE_URL=http://localhost:11434  # 客户端会自动补 /v1
+  unset OPENAI_API_KEY                             # 本地无需鉴权头
+  export DEFAULT_MODEL=llama3.1                    # 使用已拉取的模型名
+  ```
+
+- 建议使用 `chat_stream`（Chat Completions 流式接口）；部分 Ollama 版本不支持 Responses API。
+- 当携带 `tools`/`tool_choice` 等字段导致 400/422 错误时，表示该后端不支持 OpenAI 工具调用协议；请移除函数调用相关参数。
+- 若使用多模态/图片能力，请确认模型和后端确实支持；否则将提示尝试去掉 `--image` 或改用支持多模态的提供方。
+
 ### 通用注意事项
 
 - `API_BASE_URL` 会被规范化为以 `/v1` 结尾；若已包含 `/v1` 则不重复添加。
