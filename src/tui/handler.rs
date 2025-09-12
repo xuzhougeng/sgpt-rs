@@ -405,6 +405,18 @@ while True:
                         break; // Quit requested
                     }
                 }
+                TuiEvent::ToggleMouseCapture(enable) => {
+                    if enable {
+                        let _ = terminal
+                            .backend_mut()
+                            .execute(crossterm::event::EnableMouseCapture);
+                    } else {
+                        let _ = terminal
+                            .backend_mut()
+                            .execute(crossterm::event::DisableMouseCapture);
+                    }
+                    app.set_mouse_capture_enabled(enable);
+                }
                 TuiEvent::Mouse(m) => match m.kind {
                     MouseEventKind::ScrollUp => app.scroll_up(),
                     MouseEventKind::ScrollDown => app.scroll_down(),
@@ -784,6 +796,12 @@ async fn handle_key_event(
         }
         KeyCode::F(1) => {
             app.toggle_help();
+        }
+        // F2: toggle mouse capture to switch between scroll and mouse selection/copy
+        KeyCode::F(2) => {
+            let enable_capture = !app.mouse_capture_enabled;
+            app.set_mouse_capture_enabled(enable_capture);
+            let _ = event_tx.send(TuiEvent::ToggleMouseCapture(enable_capture));
         }
         // Ctrl+H: toggle help (some terminals map Ctrl+H to Backspace and may not trigger this)
         KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {

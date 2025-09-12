@@ -87,6 +87,8 @@ pub struct App {
     pub user_is_scrolling: bool,
     /// Timestamp when user last manually scrolled
     pub last_manual_scroll_time: Option<std::time::Instant>,
+    /// Whether mouse capture is enabled (when disabled, terminal mouse selection works)
+    pub mouse_capture_enabled: bool,
 }
 
 impl App {
@@ -141,6 +143,7 @@ impl App {
             last_ctrl_c_time: None,
             user_is_scrolling: false,
             last_manual_scroll_time: None,
+            mouse_capture_enabled: true,
         }
     }
 
@@ -551,6 +554,17 @@ impl App {
         } else {
             base_message
         };
+
+        // Add selection mode indicator when mouse capture is disabled
+        if !self.mouse_capture_enabled {
+            self.status_message = format!("{} | 🖱 selection mode (F2)", self.status_message);
+        }
+    }
+
+    /// Set mouse capture enabled/disabled and refresh status
+    pub fn set_mouse_capture_enabled(&mut self, enabled: bool) {
+        self.mouse_capture_enabled = enabled;
+        self.update_status_message();
     }
 
     /// Handle Ctrl+C press and detect double press for quit

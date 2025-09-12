@@ -355,7 +355,7 @@ fn render_help_overlay(frame: &mut Frame, app: &App) {
                 "Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline",
             ),
             Line::from("↑/↓ = Scroll    | Ctrl+↑/↓ = Scroll chat"),
-            Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help"),
+            Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help | F2 = Toggle selection"),
             Line::from("Ctrl+E = Expand paste placeholders inline"),
             Line::from("e = Execute last | r = Repeat | d = Describe | exit() = Quit REPL"),
         ]
@@ -367,7 +367,7 @@ fn render_help_overlay(frame: &mut Frame, app: &App) {
                 "Enter = Send    | Shift+Enter = Newline | Ctrl+S = Send | Ctrl+J = Newline",
             ),
             Line::from("↑/↓ = History    | Ctrl+↑/↓ = Scroll chat"),
-            Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help"),
+            Line::from("Ctrl+C = Clear (2x=Quit) | Ctrl+D = Quit | F1/Ctrl+H = Help | F2 = Toggle selection"),
             Line::from("Ctrl+E = Expand paste placeholders inline"),
         ]
     };

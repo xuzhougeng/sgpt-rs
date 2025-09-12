@@ -59,4 +59,6 @@ pub enum TuiEvent {
     Paste(String),
     /// Clear current interpreter session (restart)
     ClearSession,
+    /// Toggle mouse capture (true = enable capture; false = allow terminal selection)
+    ToggleMouseCapture(bool),
 }
