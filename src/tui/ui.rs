@@ -10,7 +10,7 @@ use ratatui::{
 
 use super::app::{App, InputMode, PopupState};
 use crate::llm::Role;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar};
 
 /// Render the main UI
 pub fn render_ui(frame: &mut Frame, app: &App) {
@@ -73,13 +73,37 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
 
 /// Render the chat conversation area
 fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
-    let mut content_lines = Vec::new();
-    // Keep a parallel plain-text view of lines to compute wrapped row count
-    let mut raw_line_texts: Vec<String> = Vec::new();
+    // Compute inner sizes
+    let available_height = area.height.saturating_sub(2) as usize; // inner rows excluding borders
+    let inner_width = area.width.saturating_sub(2) as usize; // inner columns excluding borders
 
+    // Helper: wrap a single logical line into visual rows honoring unicode display width
+    fn wrap_line(s: &str, width: usize) -> Vec<String> {
+        if width == 0 {
+            return vec![String::new()];
+        }
+        if s.is_empty() {
+            return vec![String::new()];
+        }
+        let mut rows = Vec::new();
+        let mut cur = String::new();
+        let mut cur_w = 0usize;
+        for ch in s.chars() {
+            let w = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if cur_w + w > width && !cur.is_empty() {
+                rows.push(std::mem::take(&mut cur));
+                cur_w = 0;
+            }
+            cur.push(ch);
+            cur_w += w;
+        }
+        rows.push(cur);
+        rows
+    }
+
+    // Pre-wrap all content into visual rows with styles
+    let mut rows: Vec<(String, Style)> = Vec::new();
     let visible_msgs = app.visible_messages();
-
-    // Build content as styled text lines and record their raw text for width calc
     for msg in visible_msgs {
         let (prefix, style) = match msg.role {
             Role::User => ("> ", Style::default().fg(Color::Green)),
@@ -88,30 +112,38 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             Role::Tool => ("TOOL ", Style::default().fg(Color::Magenta)),
             Role::Developer => ("DEV ", Style::default().fg(Color::Blue)),
         };
-
         let content = format!("{}{}", prefix, msg.content);
-
         for line in content.lines() {
-            let line_str = line.to_string();
-            raw_line_texts.push(line_str.clone());
-            content_lines.push(Line::from(vec![Span::styled(line_str, style)]));
+            for r in wrap_line(line, inner_width) {
+                rows.push((r, style));
+            }
         }
-
-        // Add empty line between messages for readability (counts as one row)
+        // Blank separator row between messages
         if !content.is_empty() {
-            raw_line_texts.push(String::new());
-            content_lines.push(Line::from(""));
+            rows.push((String::new(), Style::default()));
         }
     }
-
-    // Add current response if streaming
     if app.is_receiving_response && !app.current_response.is_empty() {
         let style = Style::default().fg(Color::Cyan);
         for line in app.current_response.lines() {
-            let line_str = line.to_string();
-            raw_line_texts.push(line_str.clone());
-            content_lines.push(Line::from(vec![Span::styled(line_str, style)]));
+            for r in wrap_line(line, inner_width) {
+                rows.push((r, style));
+            }
         }
+    }
+
+    // Compute slice of rows to display based on scroll offset
+    let total_rows = rows.len();
+    let max_scroll = total_rows.saturating_sub(available_height);
+    let actual_offset = app.chat_scroll_offset.min(max_scroll);
+    let start = max_scroll.saturating_sub(actual_offset);
+    let end = start.saturating_add(available_height).min(total_rows);
+    let visible_slice = &rows[start..end];
+
+    // Build Text for visible rows
+    let mut content_lines: Vec<Line> = Vec::with_capacity(visible_slice.len());
+    for (text, style) in visible_slice.iter() {
+        content_lines.push(Line::from(vec![Span::styled(text.clone(), *style)]));
     }
 
     let title = format!(
@@ -119,35 +151,7 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         app.chat_id, app.model
     );
 
-    // Calculate scrolling with proper WRAPPED line counting
-    let available_height = area.height.saturating_sub(2) as usize; // Account for borders
-    let inner_width = area.width.saturating_sub(2) as usize; // Account for borders
-
-    // Helper to count how many terminal rows a string takes when wrapped
-    fn wrapped_rows(s: &str, inner_width: usize) -> usize {
-        if inner_width == 0 {
-            return 0;
-        }
-        let w = UnicodeWidthStr::width(s);
-        // Empty lines still occupy one row
-        if w == 0 {
-            1
-        } else {
-            // ceil_div(w, inner_width)
-            (w + inner_width - 1) / inner_width
-        }
-    }
-
-    let total_wrapped_rows: usize = raw_line_texts
-        .iter()
-        .map(|s| wrapped_rows(s, inner_width))
-        .sum();
-
-    // Create text content
-    let text_content = Text::from(content_lines);
-
-    // Create paragraph with scrolling
-    let mut paragraph = Paragraph::new(text_content)
+    let paragraph = Paragraph::new(Text::from(content_lines))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -159,15 +163,8 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
         )
+        // Rows are already wrapped; keep trim=false to preserve spaces, but wrapping no longer needed
         .wrap(Wrap { trim: false });
-
-    // Apply scrolling if content exceeds available space
-    if total_wrapped_rows > available_height {
-        let max_scroll = total_wrapped_rows.saturating_sub(available_height);
-        let actual_offset = app.chat_scroll_offset.min(max_scroll);
-        let scroll_y = max_scroll.saturating_sub(actual_offset) as u16;
-        paragraph = paragraph.scroll((scroll_y, 0));
-    }
 
     frame.render_widget(paragraph, area);
 }
