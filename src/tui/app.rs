@@ -83,6 +83,10 @@ pub struct App {
     pub pending_pastes: Vec<(String, String)>,
     /// Timestamp of last Ctrl+C press for double Ctrl+C detection
     pub last_ctrl_c_time: Option<std::time::Instant>,
+    /// Whether user is manually scrolling (disables auto-scroll temporarily)
+    pub user_is_scrolling: bool,
+    /// Timestamp when user last manually scrolled
+    pub last_manual_scroll_time: Option<std::time::Instant>,
 }
 
 impl App {
@@ -135,6 +139,8 @@ impl App {
             popup_state: PopupState::None,
             pending_pastes: Vec::new(),
             last_ctrl_c_time: None,
+            user_is_scrolling: false,
+            last_manual_scroll_time: None,
         }
     }
 
@@ -146,8 +152,8 @@ impl App {
             self.messages
                 .drain(0..self.messages.len() - self.max_display_messages);
         }
-        // Auto-scroll to bottom to show new message
-        self.scroll_to_bottom();
+        // Force auto-scroll to bottom to show new message
+        self.force_scroll_to_bottom();
     }
 
     /// Get visible messages for display (excluding system messages)
@@ -183,6 +189,10 @@ impl App {
         self.current_response.clear();
         self.is_receiving_response = false;
         self.update_status_message(); // Update status after finishing response
+
+        // Extra safety: force scroll to bottom after finishing response
+        self.force_scroll_to_bottom();
+
         Ok(())
     }
 
@@ -217,6 +227,8 @@ impl App {
         // Scroll up by one line at a time, but we need terminal dimensions
         // For now, increment by 1 and let the UI handle the actual calculation
         self.chat_scroll_offset += 1;
+        self.user_is_scrolling = true;
+        self.last_manual_scroll_time = Some(std::time::Instant::now());
     }
 
     /// Scroll chat history down (show newer messages) - now line-based
@@ -224,12 +236,32 @@ impl App {
         // Decrease offset to show newer messages
         if self.chat_scroll_offset > 0 {
             self.chat_scroll_offset -= 1;
+            self.user_is_scrolling = true;
+            self.last_manual_scroll_time = Some(std::time::Instant::now());
+        } else {
+            // If we're already at the bottom, clear the scrolling flag
+            self.user_is_scrolling = false;
+            self.last_manual_scroll_time = None;
         }
     }
 
-    /// Reset scroll to bottom
-    pub fn scroll_to_bottom(&mut self) {
+    /// Force scroll to bottom (used for new messages/responses)
+    pub fn force_scroll_to_bottom(&mut self) {
         self.chat_scroll_offset = 0;
+        self.user_is_scrolling = false;
+        self.last_manual_scroll_time = None;
+    }
+
+    /// Check if user manual scrolling has timed out and re-enable auto-scroll
+    pub fn check_scroll_timeout(&mut self) {
+        const SCROLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+        if let Some(last_scroll_time) = self.last_manual_scroll_time {
+            if last_scroll_time.elapsed() > SCROLL_TIMEOUT {
+                self.user_is_scrolling = false;
+                self.last_manual_scroll_time = None;
+            }
+        }
     }
 
     // ----- Input editing helpers -----

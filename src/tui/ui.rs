@@ -10,6 +10,7 @@ use ratatui::{
 
 use super::app::{App, InputMode, PopupState};
 use crate::llm::Role;
+use unicode_width::UnicodeWidthStr;
 
 /// Render the main UI
 pub fn render_ui(frame: &mut Frame, app: &App) {
@@ -73,9 +74,12 @@ pub fn render_ui(frame: &mut Frame, app: &App) {
 /// Render the chat conversation area
 fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     let mut content_lines = Vec::new();
+    // Keep a parallel plain-text view of lines to compute wrapped row count
+    let mut raw_line_texts: Vec<String> = Vec::new();
+
     let visible_msgs = app.visible_messages();
 
-    // Build content as styled text lines
+    // Build content as styled text lines and record their raw text for width calc
     for msg in visible_msgs {
         let (prefix, style) = match msg.role {
             Role::User => ("> ", Style::default().fg(Color::Green)),
@@ -87,13 +91,15 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
 
         let content = format!("{}{}", prefix, msg.content);
 
-        // Add each line with proper styling
         for line in content.lines() {
-            content_lines.push(Line::from(vec![Span::styled(line.to_string(), style)]));
+            let line_str = line.to_string();
+            raw_line_texts.push(line_str.clone());
+            content_lines.push(Line::from(vec![Span::styled(line_str, style)]));
         }
 
-        // Add empty line between messages for readability
+        // Add empty line between messages for readability (counts as one row)
         if !content.is_empty() {
+            raw_line_texts.push(String::new());
             content_lines.push(Line::from(""));
         }
     }
@@ -101,9 +107,10 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     // Add current response if streaming
     if app.is_receiving_response && !app.current_response.is_empty() {
         let style = Style::default().fg(Color::Cyan);
-
         for line in app.current_response.lines() {
-            content_lines.push(Line::from(vec![Span::styled(line.to_string(), style)]));
+            let line_str = line.to_string();
+            raw_line_texts.push(line_str.clone());
+            content_lines.push(Line::from(vec![Span::styled(line_str, style)]));
         }
     }
 
@@ -112,9 +119,29 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         app.chat_id, app.model
     );
 
-    // Calculate scrolling
+    // Calculate scrolling with proper WRAPPED line counting
     let available_height = area.height.saturating_sub(2) as usize; // Account for borders
-    let total_lines = content_lines.len();
+    let inner_width = area.width.saturating_sub(2) as usize; // Account for borders
+
+    // Helper to count how many terminal rows a string takes when wrapped
+    fn wrapped_rows(s: &str, inner_width: usize) -> usize {
+        if inner_width == 0 {
+            return 0;
+        }
+        let w = UnicodeWidthStr::width(s);
+        // Empty lines still occupy one row
+        if w == 0 {
+            1
+        } else {
+            // ceil_div(w, inner_width)
+            (w + inner_width - 1) / inner_width
+        }
+    }
+
+    let total_wrapped_rows: usize = raw_line_texts
+        .iter()
+        .map(|s| wrapped_rows(s, inner_width))
+        .sum();
 
     // Create text content
     let text_content = Text::from(content_lines);
@@ -134,20 +161,11 @@ fn render_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         )
         .wrap(Wrap { trim: false });
 
-    if total_lines > available_height {
-        // Calculate scroll position - when chat_scroll_offset is 0, show the bottom
-        let scroll_y = if app.chat_scroll_offset == 0 {
-            // Auto-scroll: show the latest content
-            total_lines.saturating_sub(available_height) as u16
-        } else {
-            // Manual scroll: respect scroll offset
-            let max_scroll = total_lines.saturating_sub(available_height);
-            let actual_offset = app.chat_scroll_offset.min(max_scroll);
-            (total_lines
-                .saturating_sub(available_height)
-                .saturating_sub(actual_offset)) as u16
-        };
-
+    // Apply scrolling if content exceeds available space
+    if total_wrapped_rows > available_height {
+        let max_scroll = total_wrapped_rows.saturating_sub(available_height);
+        let actual_offset = app.chat_scroll_offset.min(max_scroll);
+        let scroll_y = max_scroll.saturating_sub(actual_offset) as u16;
         paragraph = paragraph.scroll((scroll_y, 0));
     }
 

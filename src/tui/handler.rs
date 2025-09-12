@@ -391,6 +391,9 @@ while True:
     });
 
     loop {
+        // Check scroll timeout to re-enable auto-scroll after user inactivity
+        app.check_scroll_timeout();
+
         // Render UI
         terminal.draw(|frame| render_ui(frame, app))?;
 
@@ -1088,6 +1091,9 @@ fn app_paste_text(app: &mut App, content: &str) {
             }
         }
     }
+
+    // Force scroll to bottom after paste to ensure pasted content is visible
+    app.force_scroll_to_bottom();
 }
 
 /// Handle LLM streaming events
@@ -1100,10 +1106,13 @@ async fn handle_llm_stream_event(
     match event {
         StreamEvent::Content(content) => {
             app.append_response(&content);
-            // Always auto-scroll to show new content when streaming
-            app.scroll_to_bottom();
+            // Auto-scroll to show new content when streaming, but only if user isn't manually scrolling
+            if !app.user_is_scrolling {
+                app.force_scroll_to_bottom();
+            }
         }
         StreamEvent::Done => {
+            // Finish the response first
             app.finish_response()?;
 
             // Save session if not temporary
