@@ -629,7 +629,8 @@ async fn handle_key_event(
         }
         // Fallback submit: Ctrl+S to send (some terminals can't detect Ctrl+Enter)
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let input = app.get_input_text();
+            // Expand any pending paste placeholders before sending
+            let input = app.expand_placeholders_for_submit();
 
             if input.trim() == "exit()" {
                 return Ok(true);
@@ -682,8 +683,8 @@ async fn handle_key_event(
             }
         }
         KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            // Try to expand collapsed paste content
-            app.try_expand_collapsed_paste();
+            // Expand any placeholders inline (optional user action)
+            app.expand_placeholders_inline();
         }
         KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             // Toggle multiline mode
@@ -763,8 +764,8 @@ async fn handle_key_event(
                     }
                 }
             } else {
-                // Enter (no Shift) -> submit
-                let input = app.get_input_text();
+                // Enter (no Shift) -> submit. Expand placeholders first
+                let input = app.expand_placeholders_for_submit();
 
                 if input.trim() == "exit()" {
                     return Ok(true);
@@ -908,19 +909,19 @@ async fn handle_user_input(
 }
 
 fn app_paste_text(app: &mut App, content: &str) {
-    const MAX_PASTE_CHARS: usize = 1000;
+    const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;
 
     let char_count = content.chars().count();
-    let content_to_insert = if char_count > MAX_PASTE_CHARS {
-        // Show collapsed indicator instead of full content
-        format!("[pasted content {} chars]", char_count)
+    let content_to_insert = if char_count > LARGE_PASTE_CHAR_THRESHOLD {
+        // Show compact placeholder instead of full content
+        format!("[Pasted Content {} chars]", char_count)
     } else {
         content.to_string()
     };
 
-    // Store the actual content in a field if we collapsed it, so user can expand if needed
-    if char_count > MAX_PASTE_CHARS {
-        app.store_collapsed_paste_content(content.to_string());
+    // Register mapping so we can expand later on submit or explicit request
+    if char_count > LARGE_PASTE_CHAR_THRESHOLD {
+        app.register_pending_paste(content_to_insert.clone(), content.to_string());
     }
 
     let content = &content_to_insert;

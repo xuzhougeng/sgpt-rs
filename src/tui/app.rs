@@ -81,6 +81,8 @@ pub struct App {
     pub popup_state: PopupState,
     /// Stored collapsed paste content for potential expansion
     pub collapsed_paste_content: Option<String>,
+    /// Pending paste mappings: (placeholder -> actual content)
+    pub pending_pastes: Vec<(String, String)>,
     /// Timestamp of last Ctrl+C press for double Ctrl+C detection
     pub last_ctrl_c_time: Option<std::time::Instant>,
 }
@@ -134,6 +136,7 @@ impl App {
             max_display_messages: 100,
             popup_state: PopupState::None,
             collapsed_paste_content: None,
+            pending_pastes: Vec::new(),
             last_ctrl_c_time: None,
         }
     }
@@ -265,9 +268,16 @@ impl App {
             self.input.insert(byte_idx, c);
             self.input_cursor += 1;
         }
+        // Any edit may invalidate pending placeholders not present anymore
+        self.cleanup_pending_pastes();
     }
 
     pub fn backspace(&mut self) {
+        // Try atomic placeholder removal at boundary
+        if self.try_remove_placeholder_at_cursor(true) {
+            self.cleanup_pending_pastes();
+            return;
+        }
         if self.input_cursor > 0 {
             let del_char_pos = self.input_cursor - 1;
             let byte_idx = crate::utils::unicode::char_to_byte_index(&self.input, del_char_pos);
@@ -290,15 +300,22 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
         }
+        self.cleanup_pending_pastes();
     }
 
     pub fn delete(&mut self) {
+        // Try atomic placeholder removal at boundary
+        if self.try_remove_placeholder_at_cursor(false) {
+            self.cleanup_pending_pastes();
+            return;
+        }
         let total_chars = self.input.chars().count();
         if self.input_cursor < total_chars {
             let byte_idx =
                 crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
             self.input.remove(byte_idx);
         }
+        self.cleanup_pending_pastes();
     }
 
     pub fn push_history(&mut self, line: String) {
@@ -513,6 +530,140 @@ impl App {
 
         false
     }
+
+    /// Register a placeholder to actual pasted content mapping
+    pub fn register_pending_paste(&mut self, placeholder: String, actual: String) {
+        self.pending_pastes.push((placeholder, actual));
+    }
+
+    /// Expand placeholders to actual pasted content for submission, then clear mappings
+    pub fn expand_placeholders_for_submit(&mut self) -> String {
+        let mut text = self.get_input_text();
+        if self.pending_pastes.is_empty() {
+            return text;
+        }
+
+        // Replace each placeholder once, in order
+        for (placeholder, actual) in &self.pending_pastes {
+            if let Some(idx_chars) = find_substring_char_index(&text, placeholder) {
+                let (before, after) = split_by_char_index(&text, idx_chars);
+                let after_idx = placeholder.chars().count();
+                let (_, tail) = split_by_char_index(after, after_idx);
+                let mut combined = before;
+                combined.push_str(actual);
+                combined.push_str(tail);
+                text = combined;
+            }
+        }
+        // Clear mappings after expansion
+        self.pending_pastes.clear();
+        text
+    }
+
+    /// Try to expand all placeholders inline in the current composer input.
+    /// Returns true if any expansion occurred.
+    pub fn expand_placeholders_inline(&mut self) -> bool {
+        if self.pending_pastes.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        // Work only on the current line for inline expansion to avoid heavy state changes
+        let mut line = self.input.clone();
+        for (placeholder, actual) in &self.pending_pastes {
+            if let Some(start_chars) = find_substring_char_index(&line, placeholder) {
+                let (before, after) = split_by_char_index(&line, start_chars);
+                let after_idx = placeholder.chars().count();
+                let (_, tail) = split_by_char_index(after, after_idx);
+                let mut combined = before;
+                combined.push_str(actual);
+                combined.push_str(tail);
+                line = combined;
+                // Adjust cursor if needed
+                let new_cursor = if self.input_cursor >= start_chars {
+                    start_chars + actual.chars().count()
+                } else {
+                    self.input_cursor
+                };
+                self.input_cursor = new_cursor;
+                changed = true;
+            }
+        }
+        if changed {
+            self.input = line;
+            // If now multi-line content present, switch mode accordingly
+            if self.input.contains('\n') {
+                let parts: Vec<String> = self.input.split('\n').map(|s| s.to_string()).collect();
+                if parts.len() > 1 {
+                    self.multiline_buffer = parts[..parts.len() - 1].to_vec();
+                    self.input = parts.last().cloned().unwrap_or_default();
+                    self.input_cursor = self.input.chars().count();
+                    self.input_mode = InputMode::MultiLine;
+                }
+            }
+            // After expansion, drop placeholders that disappeared
+            self.cleanup_pending_pastes();
+        }
+        changed
+    }
+
+    /// Attempt to remove a whole placeholder at the cursor boundary for Backspace/Delete.
+    /// Returns true if a placeholder was removed.
+    pub fn try_remove_placeholder_at_cursor(&mut self, is_backspace: bool) -> bool {
+        // Only operate on the current input line
+        let line = &self.input;
+        if line.is_empty() || self.pending_pastes.is_empty() {
+            return false;
+        }
+        // Scan for any placeholder occurrence enclosing the boundary
+        // Boundary is to the left for backspace, to the right for delete
+        let boundary = self.input_cursor;
+        for (idx, (placeholder, _actual)) in self.pending_pastes.iter().enumerate() {
+            if let Some(start_chars) = find_substring_char_index(line, placeholder) {
+                let end_chars = start_chars + placeholder.chars().count();
+                let hit = if is_backspace {
+                    boundary == end_chars
+                } else {
+                    boundary == start_chars
+                };
+                if hit {
+                    // Remove substring from input
+                    let (before, after) = split_by_char_index(line, start_chars);
+                    let (_, tail) = split_by_char_index(after, placeholder.chars().count());
+                    self.input = format!("{}{}", before, tail);
+                    self.input_cursor = start_chars;
+                    // Remove mapping (only one occurrence)
+                    self.pending_pastes.remove(idx);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Remove any pending paste entries whose placeholders are no longer present in the composer.
+    pub fn cleanup_pending_pastes(&mut self) {
+        if self.pending_pastes.is_empty() {
+            return;
+        }
+        let full = self.get_input_text();
+        self.pending_pastes.retain(|(ph, _)| full.contains(ph));
+    }
+}
+
+/// Find the character index of a substring in a string (first occurrence).
+fn find_substring_char_index(haystack: &str, needle: &str) -> Option<usize> {
+    haystack
+        .find(needle)
+        .map(|byte_idx| haystack[..byte_idx].chars().count())
+}
+
+/// Split a string by a character index, returning (left, right) string slices as owned Strings.
+fn split_by_char_index<'a>(s: &'a str, char_idx: usize) -> (String, &'a str) {
+    if char_idx == 0 {
+        return (String::new(), s);
+    }
+    let byte_idx = crate::utils::unicode::char_to_byte_index(s, char_idx);
+    (s[..byte_idx].to_string(), &s[byte_idx..])
 }
 
 #[cfg(test)]
@@ -555,5 +706,24 @@ mod tests {
         // Ensure no panic and cursor end works
         app.move_cursor_end();
         assert_eq!(app.input_cursor, app.input.chars().count());
+    }
+
+    #[test]
+    fn placeholder_submit_and_cleanup() {
+        let mut app = new_empty_app();
+        // Simulate inserting a placeholder and mapping
+        let placeholder = "[Pasted Content 1234 chars]".to_string();
+        app.input = format!("foo {} bar", placeholder);
+        app.input_cursor = app.input.chars().count();
+        app.register_pending_paste(placeholder.clone(), "X".repeat(5));
+
+        // Submit should expand and clear mapping
+        let expanded = app.expand_placeholders_for_submit();
+        assert_eq!(expanded, format!("foo {} bar", "X".repeat(5)));
+        assert!(app.pending_pastes.is_empty());
+
+        // Cleanup should be a no-op
+        app.cleanup_pending_pastes();
+        assert!(app.pending_pastes.is_empty());
     }
 }
