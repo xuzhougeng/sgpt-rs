@@ -257,6 +257,16 @@ impl App {
         self.input_cursor = self.input.chars().count();
     }
 
+    pub fn move_cursor_word_left(&mut self) {
+        let new_pos = prev_word_boundary(&self.input, self.input_cursor);
+        self.input_cursor = new_pos;
+    }
+
+    pub fn move_cursor_word_right(&mut self) {
+        let new_pos = next_word_boundary(&self.input, self.input_cursor);
+        self.input_cursor = new_pos;
+    }
+
     pub fn insert_char(&mut self, c: char) {
         let total_chars = self.input.chars().count();
         if self.input_cursor >= total_chars {
@@ -315,6 +325,46 @@ impl App {
                 crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
             self.input.remove(byte_idx);
         }
+        self.cleanup_pending_pastes();
+    }
+
+    pub fn delete_prev_word(&mut self) {
+        if self.input_cursor == 0 {
+            return;
+        }
+        let start = prev_word_boundary(&self.input, self.input_cursor);
+        if start < self.input_cursor {
+            let start_b = crate::utils::unicode::char_to_byte_index(&self.input, start);
+            let end_b = crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
+            self.input.replace_range(start_b..end_b, "");
+            self.input_cursor = start;
+            self.cleanup_pending_pastes();
+        }
+    }
+
+    pub fn delete_next_word(&mut self) {
+        let end = next_word_boundary(&self.input, self.input_cursor);
+        let cur_b = crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
+        let end_b = crate::utils::unicode::char_to_byte_index(&self.input, end);
+        if end_b > cur_b {
+            self.input.replace_range(cur_b..end_b, "");
+            self.cleanup_pending_pastes();
+        }
+    }
+
+    pub fn kill_to_line_start(&mut self) {
+        if self.input_cursor == 0 {
+            return;
+        }
+        let end_b = crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
+        self.input.replace_range(0..end_b, "");
+        self.input_cursor = 0;
+        self.cleanup_pending_pastes();
+    }
+
+    pub fn kill_to_line_end(&mut self) {
+        let cur_b = crate::utils::unicode::char_to_byte_index(&self.input, self.input_cursor);
+        self.input.replace_range(cur_b..self.input.len(), "");
         self.cleanup_pending_pastes();
     }
 
@@ -664,6 +714,67 @@ fn split_by_char_index<'a>(s: &'a str, char_idx: usize) -> (String, &'a str) {
     }
     let byte_idx = crate::utils::unicode::char_to_byte_index(s, char_idx);
     (s[..byte_idx].to_string(), &s[byte_idx..])
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn prev_word_boundary(s: &str, cursor: usize) -> usize {
+    if cursor == 0 {
+        return 0;
+    }
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = cursor.min(chars.len());
+    if i == 0 {
+        return 0;
+    }
+    i -= 1;
+    while i > 0 && chars[i].is_whitespace() {
+        i -= 1;
+    }
+    if i == 0 {
+        return 0;
+    }
+    let cls = is_word_char(chars[i]);
+    while i > 0 {
+        let p = chars[i - 1];
+        if p.is_whitespace() {
+            break;
+        }
+        if is_word_char(p) != cls {
+            break;
+        }
+        i -= 1;
+    }
+    i
+}
+
+fn next_word_boundary(s: &str, cursor: usize) -> usize {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut i = cursor.min(n);
+    if i >= n {
+        return n;
+    }
+    while i < n && chars[i].is_whitespace() {
+        i += 1;
+    }
+    if i >= n {
+        return n;
+    }
+    let cls = is_word_char(chars[i]);
+    while i < n {
+        let c = chars[i];
+        if c.is_whitespace() {
+            break;
+        }
+        if is_word_char(c) != cls {
+            break;
+        }
+        i += 1;
+    }
+    i
 }
 
 #[cfg(test)]

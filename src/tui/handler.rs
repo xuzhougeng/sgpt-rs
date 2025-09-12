@@ -657,6 +657,14 @@ async fn handle_key_event(
                         app.clear_input();
                         return Ok(false);
                     }
+                    "p" if !app.last_command.is_empty() => {
+                        // Show last command in a popup (reuse description popup UI)
+                        let title = "Last Command".to_string();
+                        let cmd = app.last_command.clone();
+                        app.show_description(title, cmd);
+                        app.clear_input();
+                        return Ok(false);
+                    }
                     _ => {}
                 }
             }
@@ -675,16 +683,74 @@ async fn handle_key_event(
             return Ok(false);
         }
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            return Ok(true); // Quit
+            // Ctrl+D: delete next char; quit only if composer empty
+            if app.get_input_text().trim().is_empty() {
+                return Ok(true);
+            } else {
+                app.delete();
+                return Ok(false);
+            }
         }
-        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+L: show variables snapshot (interpreter mode)
             if app.interpreter.is_some() {
                 let _ = event_tx.send(TuiEvent::ShowVariables);
             }
         }
-        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Char('e')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
             // Expand any placeholders inline (optional user action)
             app.expand_placeholders_inline();
+        }
+        KeyCode::Char('E') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Control + uppercase E (some terminals)
+            app.expand_placeholders_inline();
+        }
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+A: beginning of line
+            app.move_cursor_home();
+        }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+E: end of line
+            app.move_cursor_end();
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+U: kill to line start
+            app.kill_to_line_start();
+        }
+        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+K: kill to line end
+            app.kill_to_line_end();
+        }
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+W: delete previous word
+            app.delete_prev_word();
+        }
+        KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+            // Alt+Backspace: delete previous word
+            app.delete_prev_word();
+        }
+        KeyCode::Delete if key.modifiers.contains(KeyModifiers::ALT) => {
+            // Alt+Delete: delete next word
+            app.delete_next_word();
+        }
+        KeyCode::Left
+            if key
+                .modifiers
+                .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) =>
+        {
+            // Word-left
+            app.move_cursor_word_left();
+        }
+        KeyCode::Right
+            if key
+                .modifiers
+                .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) =>
+        {
+            // Word-right
+            app.move_cursor_word_right();
         }
         KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             // Toggle multiline mode
@@ -716,8 +782,8 @@ async fn handle_key_event(
         KeyCode::F(1) => {
             app.toggle_help();
         }
+        // Ctrl+H: toggle help (some terminals map Ctrl+H to Backspace and may not trigger this)
         KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            // Toggle help via Ctrl+H (as requested). Note: some terminals map Ctrl+H to Backspace.
             app.toggle_help();
         }
         KeyCode::Char('/') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -791,6 +857,13 @@ async fn handle_key_event(
                         "d" if !app.last_command.is_empty() => {
                             let _ =
                                 event_tx.send(TuiEvent::DescribeCommand(app.last_command.clone()));
+                            app.clear_input();
+                            return Ok(false);
+                        }
+                        "p" if !app.last_command.is_empty() => {
+                            let title = "Last Command".to_string();
+                            let cmd = app.last_command.clone();
+                            app.show_description(title, cmd);
                             app.clear_input();
                             return Ok(false);
                         }
