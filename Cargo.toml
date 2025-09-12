@@ -1,8 +1,8 @@
 [package]
 name = "sgpt"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2021"
-description = "ShellGPT Rust rewrite scaffold"
+description = "Use LLM in Shell"
 license = "MIT"
 
 [features]
